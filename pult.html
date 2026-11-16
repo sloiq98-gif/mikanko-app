@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Пульт доступа</title>
+<style>
+:root{--bg:#F1E8DA;--surface:#FBF6EE;--ink:#16130F;--muted:#6E6457;--line:#DCCFBC;--accent:#E8641B;--ok:#2F7D4F;--ok-bg:#E2F0E6;--bad:#B8352B;--bad-bg:#F8E1DD}
+@media (prefers-color-scheme:dark){:root{--bg:#14110E;--surface:#1F1B16;--ink:#F3EADC;--muted:#A99D8C;--line:#3A332A;--accent:#F27A33;--ok:#6CC08C;--ok-bg:#1C3326;--bad:#F08A7E;--bad-bg:#3A1F1B}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:640px;margin:0 auto;padding:20px 16px 60px;display:flex;flex-direction:column;gap:16px}
+h1{font-size:28px;margin:4px 0 0;letter-spacing:-.01em}
+h2{font-size:17px;margin:0}
+.card{background:var(--surface);border:1.5px solid var(--line);border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px}
+p{margin:0}.muted{color:var(--muted);font-size:14px}
+input{font:inherit;padding:12px 14px;border-radius:12px;border:1.5px solid var(--line);background:var(--bg);color:var(--ink);width:100%;min-width:0}
+input:focus{outline:none;border-color:var(--accent)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row input{flex:1}
+button{font:600 15px system-ui,-apple-system,sans-serif;padding:11px 16px;border-radius:999px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
+button.main{background:var(--accent);border-color:var(--accent);color:#fff}
+button.danger{color:var(--bad)}
+button:disabled{opacity:.5;cursor:default}
+.status{font-size:14px;padding:10px 12px;border-radius:12px;display:none}
+.status.ok{display:block;background:var(--ok-bg);color:var(--ok)}
+.status.err{display:block;background:var(--bad-bg);color:var(--bad)}
+.user{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+.user:first-child{border-top:0}
+.user .who{flex:1;min-width:0}
+.user b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.user small{display:block;color:var(--muted);font-size:13px}
+.badge{display:inline-block;margin-top:4px;font-size:12px;font-weight:700;padding:3px 9px;border-radius:99px;background:var(--ok-bg);color:var(--ok);white-space:nowrap}
+.badge.no{background:var(--bg);color:var(--muted)}
+label.chk{display:flex;gap:8px;align-items:center;font-size:15px}
+label.chk input{width:auto}
+ol{margin:0;padding-left:20px}ol li{margin:4px 0}
+</style>
+</head>
+<body>
+<main>
+  <div><p class="muted">Mikanko studio</p><h1>Пульт доступа к тренажёру</h1></div>
+
+  <div class="card">
+    <h2>1. Токен бота</h2>
+    <p class="muted">Токен из BotFather (вида 123456:ABC…). Хранится только в этом браузере и никуда не отправляется, кроме серверов Telegram. Никому его не показывайте.</p>
+    <div class="row"><input id="token" type="password" placeholder="Токен бота" autocomplete="off"><button id="check">Проверить</button></div>
+    <div class="status" id="st1"></div>
+  </div>
+
+  <div class="card">
+    <h2>2. Убрать кнопку «Учиться» у всех</h2>
+    <p class="muted">Делается один раз. После этого кнопка останется только у тех, кому вы её откроете ниже.</p>
+    <div class="row"><button id="hideAll" class="danger">Убрать кнопку у всех</button><button id="showAll">Вернуть кнопку всем</button></div>
+    <div class="status" id="st2"></div>
+  </div>
+
+  <div class="card">
+    <h2>3. Ученики</h2>
+    <p class="muted">Попросите ученика открыть бота и нажать «Старт» (или написать что угодно). Затем нажмите «Найти новых» — он появится в списке. Telegram хранит такие сообщения около суток, поэтому обновляйте список в тот же день.</p>
+    <div class="row"><button id="pull" class="main">Найти новых</button></div>
+    <div class="row"><input id="manualId" inputmode="numeric" placeholder="Или впишите Telegram ID вручную"><button id="addId">Добавить</button></div>
+    <label class="chk"><input type="checkbox" id="notify" checked> Отправить ученику сообщение, что доступ открыт</label>
+    <div class="status" id="st3"></div>
+    <div id="list"></div>
+  </div>
+
+  <div class="card">
+    <h2>Как это работает</h2>
+    <ol class="muted">
+      <li>Кнопка «Учиться» внизу чата видна только тем, кому вы её открыли.</li>
+      <li>«Закрыть» убирает кнопку у ученика.</li>
+      <li>Если в BotFather включено «Main Mini App» (кнопка «Открыть» в профиле бота), выключите его — иначе тренажёр откроют все.</li>
+      <li>Список учеников сохраняется в этом браузере. С другого устройства нажмите «Найти новых» или добавьте ID вручную.</li>
+    </ol>
+  </div>
+</main>
+<script>
+const APP_URL = new URL("./", location.href).href;   // адрес тренажёра = папка, где лежит пульт (Netlify, GitHub Pages — неважно)
+const $ = s => document.querySelector(s);
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+};
+let users = store.get("pult_users", {});
+$("#token").value = store.get("pult_token", "");
+$("#token").addEventListener("change", () => store.set("pult_token", $("#token").value.trim()));
+
+function status(id, ok, text){ const el = $(id); el.className = "status " + (ok ? "ok" : "err"); el.textContent = text; }
+async function api(method, params = {}){
+  const token = $("#token").value.trim();
+  if (!token) throw new Error("Сначала вставьте токен бота");
+  store.set("pult_token", token);
+  const body = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => body.append(k, typeof v === "object" ? JSON.stringify(v) : String(v)));
+  let r;
+  try{ r = await fetch(`https://api.telegram.org/bot${encodeURIComponent(token).replace(/%3A/g, ":")}/${method}`, {method:"POST", body}); }
+  catch(e){ throw new Error("Нет связи с Telegram. Проверьте интернет (иногда помогает VPN)."); }
+  const j = await r.json().catch(() => ({}));
+  if (!j.ok) throw new Error(j.description || "Telegram вернул ошибку");
+  return j.result;
+}
+const webAppButton = {type:"web_app", text:"Учиться", web_app:{url:APP_URL}};
+
+$("#check").onclick = async () => {
+  try{ const me = await api("getMe"); status("#st1", true, `Готово: бот @${me.username}`); }
+  catch(e){ status("#st1", false, e.message); }
+};
+$("#hideAll").onclick = async () => {
+  if (!confirmText("Убрать кнопку «Учиться» у всех, кроме тех, кому вы откроете доступ?")) return;
+  try{ await api("setChatMenuButton", {menu_button:{type:"commands"}}); status("#st2", true, "Кнопка убрана у всех. У учеников со статусом «Доступ открыт» она осталась."); }
+  catch(e){ status("#st2", false, e.message); }
+};
+$("#showAll").onclick = async () => {
+  try{ await api("setChatMenuButton", {menu_button:webAppButton}); status("#st2", true, "Кнопка «Учиться» снова видна всем."); }
+  catch(e){ status("#st2", false, e.message); }
+};
+function confirmText(t){ return window.confirm(t); }
+
+$("#pull").onclick = async () => {
+  try{
+    const ups = await api("getUpdates", {limit:100, allowed_updates:["message", "my_chat_member"]});
+    let added = 0;
+    ups.forEach(u => {
+      const f = (u.message && u.message.from) || (u.my_chat_member && u.my_chat_member.from);
+      if (!f || f.is_bot) return;
+      if (!users[f.id]) added++;
+      users[f.id] = Object.assign(users[f.id] || {granted:false}, {id:f.id, name:[f.first_name, f.last_name].filter(Boolean).join(" "), username:f.username || ""});
+    });
+    if (ups.length) await api("getUpdates", {offset:ups[ups.length - 1].update_id + 1, limit:1});
+    store.set("pult_users", users); render();
+    status("#st3", true, added ? `Новых учеников: ${added}` : "Новых нет. Попросите ученика нажать «Старт» в боте и обновите ещё раз.");
+  }catch(e){ status("#st3", false, e.message.includes("webhook") ? "У бота включён webhook — список недоступен. Добавьте ID вручную." : e.message); }
+};
+$("#addId").onclick = () => {
+  const id = $("#manualId").value.trim();
+  if (!/^\d{4,15}$/.test(id)){ status("#st3", false, "ID — это только цифры"); return; }
+  users[id] = users[id] || {id:+id, name:"", username:"", granted:false};
+  store.set("pult_users", users); $("#manualId").value = ""; render();
+};
+async function setAccess(id, on){
+  try{
+    await api("setChatMenuButton", {chat_id:id, menu_button:on ? webAppButton : {type:"default"}});
+    users[id].granted = on; store.set("pult_users", users); render();
+    if (on && $("#notify").checked){
+      try{ await api("sendMessage", {chat_id:id, text:"Вам открыт доступ к тренажёру японского Mikanko 🍊\nНажмите кнопку «Учиться» внизу чата."}); }catch(e){}
+    }
+    status("#st3", true, on ? "Доступ открыт. Ученику, возможно, нужно перезайти в чат с ботом, чтобы увидеть кнопку." : "Доступ закрыт.");
+  }catch(e){
+    status("#st3", false, e.message.includes("chat not found") ? "Telegram не знает этот чат: ученик ещё не нажал «Старт» в боте." : e.message);
+  }
+}
+function render(){
+  const list = Object.values(users).sort((a, b) => (b.granted - a.granted) || String(a.name).localeCompare(String(b.name)));
+  $("#list").innerHTML = list.length ? list.map(u => `<div class="user"><div class="who"><b>${esc(u.name || "Без имени")}</b><small>${u.username ? "@" + esc(u.username) + " · " : ""}ID ${u.id}</small><span class="badge${u.granted ? "" : " no"}">${u.granted ? "Доступ открыт" : "Нет доступа"}</span></div>
+    <button data-id="${u.id}" data-on="${u.granted ? 0 : 1}" class="${u.granted ? "danger" : "main"}">${u.granted ? "Закрыть" : "Открыть"}</button>
+    <button data-del="${u.id}" title="Убрать из списка">✕</button></div>`).join("") : `<p class="muted">Пока никого нет.</p>`;
+  document.querySelectorAll("[data-id]").forEach(b => b.onclick = () => setAccess(b.dataset.id, b.dataset.on === "1"));
+  document.querySelectorAll("[data-del]").forEach(b => b.onclick = () => { delete users[b.dataset.del]; store.set("pult_users", users); render(); });
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;"}[c]));
+render();
+</script>
+</body>
+</html>
