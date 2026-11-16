@@ -1346,8 +1346,8 @@ function renderTask(){
     const a = anchorOf(t.kana, t.rd);
     $("#screen").innerHTML = `<div class="eyebrow">Как читается 「${esc(t.kana)}」 · ${t.idx + 1} из ${t.n}</div>
       <div class="rd-head"><div class="big hl">${esc(t.kana)}</div><p><b>${esc(kjMeaning(t.kana))}</b></p></div>
-      ${rdCardHtml(t.kana, t.rd)}
-      ${ksSay(rdStepText(t.kana, t.rd, t.idx, t.idx === t.n - 1))}`;
+      ${ksSay(rdStepText(t.kana, t.rd, t.idx, t.idx === t.n - 1))}
+      ${rdCardHtml(t.kana, t.rd, {all:t.idx === 2})}`;
     bindRd(); ksTalk(); if (a) say(a.y);
     actions(`<button class="btn accent" id="next">Понятно, дальше</button>`);
     $("#next").onclick = next;
@@ -1647,7 +1647,7 @@ function wordWrite(word, poolWords, n = 4){
 }
 /* по одному слову на каждое чтение, чтобы сравнивать 一 и 一つ */
 function pickWords(k, max = 3){
-  const byRd = openRds(k).map(rd => rd.ex.filter(e => !e[3]).map(e => ({w:e[0], y:e[1], t:e[2], k, rd}))).filter(a => a.length);
+  const byRd = openRds(k).map(rd => exWords(k, rd)).filter(a => a.length);
   return shuffle(byRd.map(a => a[Math.floor(Math.random() * a.length)])).slice(0, max);
 }
 
@@ -1700,6 +1700,7 @@ function rowMenu(script, rowIdx){
 /* Изучение: каждый знак — порядок черт и обводка, сразу же письмо без подсказки; затем упражнения на весь ряд */
 function kanaLesson(script, rowIdx){
   const row = KANA[script].rows[rowIdx], pool = rowPool(script, rowIdx), kj = !!KANA[script].kanji;
+  KJ_EXTRA = new Set(kj ? row.chars.map(c => c[0]) : []);
   /* составные слова — только из уже знакомых иероглифов (пройденные ряды + этот) */
   const known = new Set(kj ? KANA[script].rows.filter((r, i) => i === rowIdx || (P[script] && P[script][r.id])).flatMap(r => r.chars.map(c => c[0])) : []);
   const allKnown = w => [...w].filter(ch => isKanji(ch)).every(ch => known.has(ch));
@@ -1711,7 +1712,9 @@ function kanaLesson(script, rowIdx){
     ...(kj ? row.chars.map(c => shuffle(compoundsOf(c[0]).filter(w => allKnown(w.w)))[0]).filter(Boolean).map(w => readBuild(w)) : []),
     ...(kj ? row.chars.map(c => shuffle(compoundsOf(c[0]).filter(w => allKnown(w.w)))[0]).filter(Boolean).filter(() => Math.random() < .5).map(w => kanjiBuild(w, row.chars.map(x => x[0]))) : []),
     ...(ST().mute || kj || (voicesReady() && !canSpeak()) ? [] : row.chars.map(c => listen(c, pool))),
-    ...sample(row.chars, Math.min(3, row.chars.length)).map(([k, r]) => ({type:"draw", kana:k, roma:r}))
+    ...sample(row.chars, Math.min(3, row.chars.length)).map(([k, r]) => ({type:"draw", kana:k, roma:r})),
+    /* чтение для дат (месяцы, числа) — отдельно и побольше: 一月, 四月, 九月… */
+    ...(kj ? row.chars.flatMap(c => { const m = mainRds(c[0]); return m.length > 2 ? sample(exWords(c[0], m[2]), 4).map(w => ({...wordRead(w, exWords(c[0], m[2]).concat(rowWords)), why:clueOf(w)})) : []; }) : [])
   ]);
   if (kj) insertPairs(practice, row.chars.map(c => shuffle(wordsOf(c[0]).filter(w => kunonTask(w)))[0]).filter(Boolean).map(w => kunonPair(w, rowWords)));
   const tasks = [
@@ -1748,6 +1751,7 @@ function testTasks(script, rowIdx){
   return out;
 }
 function kanaTest(script, rowIdx){
+  if (KANA[script].kanji) KJ_EXTRA = new Set(KANA[script].rows[rowIdx].chars.map(c => c[0]));
   const row = KANA[script].rows[rowIdx], tasks = testTasks(script, rowIdx), st = ST();
   runLesson(`Тест · ряд ${row.label}`, tasks, res => {
     const key = script + ":" + row.id; P.tests = P.tests || {};
@@ -1839,10 +1843,27 @@ function rdStepText(k, rd, idx, last){
    Остальные открываются в повторении, исключения — последними.
    ========================================================= */
 const rdId = rd => rd.k + ":" + rd.r;
+/* Знакомые иероглифы: пройденные ряды + ряд, который сейчас изучаем.
+   Слова с незнакомыми иероглифами (四月, пока не пройден 月) нигде не показываем — они откроются позже. */
+let KJ_EXTRA = new Set();
+function knownKanji(){
+  const s = new Set(KJ_EXTRA);
+  for (const m in KANA) if (KANA[m].kanji) KANA[m].rows.forEach(r => { if (P[m] && P[m][r.id]) r.chars.forEach(c => s.add(c[0])); });
+  return s;
+}
+const KJ_FREE = new Set(["曜"]);   // 曜 отдельно не учим: 〜曜日 разбирается целиком в теории про дни недели
+const isKnownWord = (w, kn = knownKanji()) => [...w].every(ch => !/[\u4e00-\u9fff]/.test(ch) || kn.has(ch) || KJ_FREE.has(ch));
+const rdUsable = (k, rd, kn) => rd.ex.some(e => !e[3] && isKnownWord(e[0], kn));
 function mainRds(k){
   const d = KD[k]; if (!d || !d.rd) return [];
-  const first = primaryRd(k), other = d.rd.find(r => r.k !== "sp" && r.k !== first.k);
-  return other ? [first, other] : [first];
+  const kn = knownKanji(); kn.add(k);
+  const ok = d.rd.filter(r => r.k !== "sp" && rdUsable(k, r, kn));
+  const p = primaryRd(k), first = ok.includes(p) ? p : (ok[0] || p);
+  /* второе чтение: другого вида (он/кун), а если у него пока нет слов из знакомых иероглифов — другое того же вида (四: よん → よっつ) */
+  const other = ok.find(r => r !== first && r.k !== first.k) || ok.find(r => r !== first);
+  /* третье — чтение для дат и счёта с уже знакомыми числами (月 → ガツ: 一月, 四月; 日 → か: 三日) */
+  const dated = ok.find(r => r !== first && r !== other && exWords(k, r).some(w => [...w.w].some(ch => NUM_KANJI.has(ch))));
+  return [first, other, dated].filter(Boolean);
 }
 function openRds(k){
   const d = KD[k]; if (!d || !d.rd) return [];
@@ -1850,7 +1871,7 @@ function openRds(k){
   return d.rd.filter(rd => m.includes(rd) || seen.includes(rdId(rd)));
 }
 const lockedRds = k => { const o = openRds(k); return ((KD[k] || {}).rd || []).filter(rd => !o.includes(rd)); };
-const exWords = (k, rd) => rd.ex.filter(e => !e[3]).map(e => ({w:e[0], y:e[1], t:e[2], k, rd}));
+const exWords = (k, rd) => { const kn = knownKanji(); kn.add(k); return rd.ex.filter(e => !e[3] && isKnownWord(e[0], kn)).map(e => ({w:e[0], y:e[1], t:e[2], k, rd})); };
 const anchorOf = (k, rd) => { const ws = exWords(k, rd); const solo = kanjiSolo(k); return ws.find(w => w.w === solo.w && rd === solo.rd) || ws[0]; };
 
 /* Картинки к словам: правила для чисел и счёта + словарь */
@@ -1932,7 +1953,7 @@ function unlockReadings(maxN = 3){
   const D = srsDeck(), out = [];
   Object.entries(D).filter(([id]) => id[0] === "c" && isKanji(id.slice(2))).sort((a, b) => b[1].s - a[1].s).forEach(([id, x]) => {
     if (out.length >= maxN) return;
-    const k = id.slice(2), locked = lockedRds(k); if (!locked.length) return;
+    const k = id.slice(2), kn = knownKanji(), locked = lockedRds(k).filter(rd => rdUsable(k, rd, kn)); if (!locked.length) return;
     const nxt = locked.find(rd => rd.k !== "sp"), sp = locked.find(rd => rd.k === "sp");
     const rd = x.s >= 1 && nxt ? nxt : x.s >= 2 && !nxt && sp ? sp : null;
     if (!rd) return;
@@ -2089,6 +2110,7 @@ const gramTopic = id => { for (const l in GT) { const t = (GT[l] || []).find(x =
 /* Всё пройденное попадает в колоду: знаки, кандзи, слова с ними, темы грамматики */
 function syncDeck(){
   const D = srsDeck(), d = dayNo();
+  for (const id in D) if (id[0] === "w" && !isKnownWord(id.slice(2))) delete D[id];   // слова с ещё не пройденными иероглифами
   const add = (id, skipped) => { if (D[id]) return; D[id] = skipped ? {s:3, due:d + 1 + Math.floor(Math.random() * 10), n:0} : {s:0, due:d + 1, n:0}; };
   for (const m in KANA){
     const kj = !!KANA[m].kanji;
@@ -2825,6 +2847,7 @@ function sectionHead(key){
 }
 function courseMap(){
   chrome(false);
+  KJ_EXTRA = new Set();
   let html;
   if (view === "home" || !SECTIONS[view]) html = hubHtml();
   else if (view === "gram") html = sectionHead("gram") + grammarHtml();
