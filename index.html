@@ -1616,13 +1616,13 @@ function recog([k, r], pool, n = 4){
   const oc = sample(uniqBy(pool.filter(c => c[1] !== r), 1), n - 1);
   const pairs = shuffle([[r, k], ...oc.map(c => [c[1], c[0]])]), opts = pairs.map(x => x[0]);
   if (!isKanji(k)) return {type:"choice", q:"Как читается знак?", jp:k, jpHl:true, jpSize:"72px", options:opts, src:pairs.map(x => x[1]), answer:opts.indexOf(r), grid:true, say:k};
-  if (isKanji(k)) return {type:"choice", q:"Что означает иероглиф?", jp:k, jpHl:true, jpSize:"80px", options:opts, answer:opts.indexOf(r), say:kanjiSolo(k).y};
+  if (isKanji(k)) return {type:"choice", q:"Что означает иероглиф?", jp:k, jpHl:true, jpSize:"80px", options:opts, answer:opts.indexOf(r), say:mainWord(k).y};
   return {type:"choice", q:"Как читается знак?", jp:k, jpHl:true, jpSize:"72px", options:opts, answer:opts.indexOf(r), grid:true, say:k};
 }
 function reverse([k, r], pool, n = 4){
   const others = sample(uniqBy(pool.filter(c => c[0] !== k && c[1] !== r), 1), n - 1).map(c => c[0]);
   const opts = shuffle([k, ...others]);
-  return {type:"choice", q:isKanji(k) ? "Найдите иероглиф" : "Найдите знак", roma:r, romaK:isKanji(k) ? null : k, romaSm:isKanji(k), options:opts, answer:opts.indexOf(k), grid:true, optKana:true, say:isKanji(k) ? kanjiSolo(k).y : k};
+  return {type:"choice", q:isKanji(k) ? "Найдите иероглиф" : "Найдите знак", roma:r, romaK:isKanji(k) ? null : k, romaSm:isKanji(k), options:opts, answer:opts.indexOf(k), grid:true, optKana:true, say:isKanji(k) ? mainWord(k).y : k};
 }
 
 
@@ -1637,15 +1637,44 @@ function trapsFor(word){
   if (!KD[k] || !/^[぀-ゟ]*$/.test(rest)) return [];
   return baseReadings(k).map(b => b + rest).filter(x => x !== word.y);
 }
+/* Похожие варианты, чтобы не угадывалось по форме (やっつ рядом с ここのつ, むっつ, やつ) */
+const SIM_SWAP = {"は":"ば","ば":"ぱ","ぱ":"は","し":"ち","ち":"し","つ":"す","す":"つ","ゅ":"ゆ","ょ":"よ","ゃ":"や","う":"お","お":"う","き":"ぎ","く":"ぐ","こ":"ご","さ":"ざ","た":"だ","と":"ど","ほ":"ぼ","ひ":"び","ふ":"ぶ","ろ":"ろう"};
+function nearMisses(y){
+  const out = new Set(), a = [...y];
+  if (y.includes("っ")) out.add(y.replace("っ", "")); else if (a.length > 2 && /[かきくけこさしすせそたちつてとぱぴぷぺぽ]/.test(a[a.length - 1]) && !/[っんー]/.test(a[a.length - 2])) out.add(a.slice(0, -1).join("") + "っ" + a[a.length - 1]);
+  if (/う$/.test(y)) out.add(y.slice(0, -1)); else if (/[おこそとのほもよろ]$/.test(y)) out.add(y + "う");
+  a.forEach((c, i) => { if (SIM_SWAP[c]) out.add(a.slice(0, i).join("") + SIM_SWAP[c] + a.slice(i + 1).join("")); });
+  out.delete(y); return [...out];
+}
+function similarity(a, b){
+  const A = [...a], B = [...b];
+  let s = 0;
+  if (A[A.length - 1] === B[B.length - 1]) s += 3;                     // одинаковый хвост (〜つ)
+  if (A.slice(-2).join("") === B.slice(-2).join("")) s += 2;          // 〜っつ
+  if (Math.abs(A.length - B.length) <= 1) s += 2;
+  s += A.filter(c => B.includes(c)).length;
+  return s;
+}
+function similarPick(answer, cands, n){
+  const uniq = [...new Set(cands)].filter(x => x && x !== answer);
+  const ranked = shuffle(uniq).sort((x, y) => similarity(answer, y) - similarity(answer, x));
+  return ranked.slice(0, n);
+}
 function wordRead(word, poolWords, n = 4){
-  const cand = [...new Set([...shuffle(trapsFor(word)).slice(0, 2), ...shuffle(wordsOf(word.k).map(x => x.y)), ...shuffle(poolWords.map(x => x.y))])].filter(y => y !== word.y);
-  const opts = shuffle([word.y, ...cand.slice(0, n - 1)]);
+  const real = [...wordsOf(word.k).map(x => x.y), ...poolWords.map(x => x.y)];
+  const known = new Set(real.concat(word.y));
+  const fake = [...trapsFor(word), ...nearMisses(word.y)].filter(y => !known.has(y));
+  /* 2 похожих настоящих чтения + 1 «почти правильное», если есть */
+  const pickReal = similarPick(word.y, real, n - 1 - Math.min(1, fake.length));
+  const pickFake = similarPick(word.y, fake, n - 1 - pickReal.length);
+  const opts = shuffle([word.y, ...pickReal, ...pickFake]).slice(0, n);
+  if (!opts.includes(word.y)) opts[0] = word.y;
   return {type:"choice", q:"Как читается слово?", jp:word.w, jpHl:true, jpSize:"56px", sub:word.t, options:opts, answer:opts.indexOf(word.y), grid:true, optKana:true, say:word.y,
     why:clueOf(word)};
 }
 function wordWrite(word, poolWords, n = 4){
-  const cand = [...new Set([...shuffle(wordsOf(word.k).map(x => x.w)), ...shuffle(poolWords.map(x => x.w))])].filter(w => w !== word.w && !poolWords.concat(wordsOf(word.k)).some(x => x.w === w && x.y === word.y));
-  const opts = shuffle([word.w, ...cand.slice(0, n - 1)]);
+  const cand = [...new Set([...wordsOf(word.k).map(x => x.w), ...poolWords.map(x => x.w)])].filter(w => w !== word.w && !poolWords.concat(wordsOf(word.k)).some(x => x.w === w && x.y === word.y));
+  const opts = shuffle([word.w, ...similarPick(word.w, cand, n - 1)]);
   return {type:"choice", q:`Как записать «${word.t}»?`, roma:word.y, romaSm:true, options:opts, answer:opts.indexOf(word.w), grid:true, optKana:true, say:word.y};
 }
 /* по одному слову на каждое чтение, чтобы сравнивать 一 и 一つ */
@@ -1719,7 +1748,7 @@ function kanaLesson(script, rowIdx){
     /* чтение для дат (месяцы, числа) — отдельно и побольше: 一月, 四月, 九月… */
     ...(kj ? row.chars.flatMap(c => { const m = mainRds(c[0]); return m.length > 2 ? sample(exWords(c[0], m[2]), 4).map(w => ({...wordRead(w, exWords(c[0], m[2]).concat(rowWords)), why:clueOf(w)})) : []; }) : [])
   ]);
-  if (kj) insertPairs(practice, row.chars.map(c => shuffle(wordsOf(c[0]).filter(w => kunonTask(w)))[0]).filter(Boolean).map(w => kunonPair(w, rowWords)));
+  if (false) insertPairs(practice, row.chars.map(c => shuffle(wordsOf(c[0]).filter(w => kunonTask(w)))[0]).filter(Boolean).map(w => kunonPair(w, rowWords)));
   const tasks = [
     ...row.chars.flatMap(([k, r]) => kj && KD[k].rd
       ? [{type:"learn", kana:k, roma:r},
@@ -1729,7 +1758,7 @@ function kanaLesson(script, rowIdx){
       : [{type:"learn", kana:k, roma:r}, {type:"draw", kana:k, roma:r, fresh:true}]),
     {type:"note", eyebrow:"Все знаки ряда изучены", title:"Закрепим", script:"весь ряд", lz:"peace",
      text: kj ? "Сейчас вперемешку: значение иероглифа, как читается слово и письмо по памяти. Если ошибётесь — Ксюша объяснит, почему так." : "Сейчас знаки вперемешку: узнать знак, найти его на слух и написать по памяти."},
-    ...practice
+    ...spreadTasks(practice)
   ];
   runLesson(`${KANA[script].name} · ${row.title || "ряд " + row.label}`, tasks, res => {
     P[script][row.id] = true; save();
@@ -1751,7 +1780,7 @@ function testTasks(script, rowIdx){
     const c = cycle.pop(), mk = makers[Math.floor(Math.random() * makers.length)];
     out.push({...mk(c, pool, st.options), why:""});
   }
-  return out;
+  return spreadTasks(out);
 }
 function kanaTest(script, rowIdx){
   if (KANA[script].kanji) KJ_EXTRA = new Set(KANA[script].rows[rowIdx].chars.map(c => c[0]));
@@ -1922,6 +1951,22 @@ function kunonTask(word){
 }
 /* пара: сначала вид чтения, потом само чтение */
 function kunonPair(word, poolWords){ const a = kunonTask(word); return a ? [a, {...wordRead(word, poolWords), why:clueOf(word)}] : []; }
+/* Задания про один и тот же иероглиф не ставим подряд: иначе ответ только что прозвучал */
+function taskKanji(t){
+  const src = [t.jp, t.pjp, t.kana, t.options && t.answer != null ? t.options[t.answer] : "", t.srs ? t.srs.slice(2) : ""].join("");
+  return new Set([...src].filter(ch => KD[ch]));
+}
+function spreadTasks(list){
+  const rest = list.slice(), out = [];
+  while (rest.length){
+    const prev = out.slice(-2).map(taskKanji);
+    let i = rest.findIndex(t => { const k = taskKanji(t); return prev.every(p => ![...k].some(c => p.has(c))); });
+    if (i < 0) i = rest.findIndex(t => { const k = taskKanji(t), p = prev[prev.length - 1]; return !p || ![...k].some(c => p.has(c)); });
+    if (i < 0) i = 0;
+    out.push(rest.splice(i, 1)[0]);
+  }
+  return out;
+}
 function insertPairs(list, pairs){ pairs.forEach(p => { const i = Math.floor(Math.random() * (list.length + 1)); list.splice(i, 0, ...p); }); return list; }
 
 /* Карточка чтения: вид, правило, опорное слово с картинкой, ещё пара примеров */
@@ -2225,7 +2270,7 @@ function srsTask(id, ids){
     const pw = ids.filter(x => x[0] === "w").map(x => WORD_IX[x.slice(2)]).filter(Boolean);
     const poolW = pw.length >= 6 ? pw : Object.values(WORD_IX).slice(0, 60);
     const mk = [wordRead, wordRead, wordWrite].concat(cjkCount(w.w) >= 2 ? [x => readBuild(x)] : []);
-    t = Math.random() < .25 && kunonTask(w) ? kunonTask(w) : mk[Math.floor(Math.random() * mk.length)](w, poolW);
+    t = knownKanji().size >= 15 && Math.random() < .2 && kunonTask(w) ? kunonTask(w) : mk[Math.floor(Math.random() * mk.length)](w, poolW);
   } else if (kind === "g"){
     const g = gramTopic(key); if (!g || !g.tasks.length) return null;
     t = prepTask(g.tasks[Math.floor(Math.random() * g.tasks.length)]);
@@ -2245,7 +2290,7 @@ function startReview(early){
   ids = shuffle(ids.slice(0, SRS_MAX));
   const un = early ? [] : unlockReadings(), allW = shuffle(Object.values(WORD_IX)).slice(0, 30);
   const tasks = [...un.flatMap(({k, rd}) => { const a = anchorOf(k, rd); return [{type:"newread", kana:k, rd}, ...(a ? [{...wordRead(a, allW)}] : [])]; }),
-    ...ids.map(id => srsTask(id, all)).filter(Boolean)];
+    ...spreadTasks(ids.map(id => srsTask(id, all)).filter(Boolean))];
   if (!tasks.length){ reviewEmpty(); return; }
   runLesson(early ? "Повторение · дополнительно" : "Повторение на сегодня", tasks, res => {
     const left = srsDue().length;
