@@ -256,6 +256,9 @@ main:has(.kj-mn) .pad-wrap .pad{width:min(100%,420px,max(210px,calc(var(--vh,100
 .hub-bar i{display:block;height:100%;background:var(--accent)}
 .hub-arrow{font-size:28px;color:var(--muted);line-height:1;flex:none}
 
+.stage-h{margin:22px 0 10px;font-family:var(--f-display);font-size:20px;display:flex;justify-content:space-between;align-items:baseline;gap:10px}.stage-h small{font-family:inherit;font-size:13px;color:var(--muted)}
+.topic.check{border-style:dashed;border-color:var(--accent)}.topic.check .tp-n{color:var(--accent)}
+
 .ks-tip{display:flex;align-items:flex-end;gap:8px;margin-top:4px;animation:ksIn .35s ease-out}
 .ks-ava{flex:none;width:64px;height:54px;border-radius:50%;overflow:hidden;background:var(--surface);border:1.5px solid var(--line);display:flex;align-items:flex-start;justify-content:center}
 .ks-ava img{width:100%;height:auto;margin-top:2px}
@@ -2046,10 +2049,17 @@ function progHtml(){
     <div class="intro-top"><div style="display:flex;flex-direction:column;gap:10px"><div class="eyebrow">Программа школы</div>${T("", "Скоро", "здесь")}</div>${lz("tea")}</div>
     <p>Сюда будут добавляться уроки с ваших занятий: кандзи, слова и грамматика именно в нашем порядке, а не по списку JLPT.</p>
     <p class="muted">Пока уроков нет. Когда преподаватель добавит урок, он появится здесь, а его материал попадёт в ваше ежедневное повторение.</p></section>`;
+  const groups = [];
+  units.forEach((u, i) => { const st = u.stage || ""; let g = groups[groups.length - 1]; if (!g || g.stage !== st){ g = {stage:st, items:[]}; groups.push(g); } g.items.push(i); });
+  const row = i => { const u = units[i], done = (P.prog || {})[u.id];
+    if (u.check) return `<button class="topic check" data-unit="${i}"><span class="tp-n">✎</span><span class="tp-t"><b>${esc(u.title)}</b><small>${done ? "✓ " + done : "задания по темам выше"}</small></span><span class="tp-jp"></span></button>`;
+    return `<button class="topic" data-unit="${i}"><span class="tp-n">${unitNo(i)}</span><span class="tp-t"><b>${esc(u.title)}</b><small>${done ? "✓ " + done : unitSummary(u)}</small></span><span class="tp-jp">${u.theory ? "" : esc((u.kanji || []).slice(0, 4).join(""))}</span></button>`; };
   return `<section class="module"><div class="module-top"><h2>Уроки</h2><span class="status">${units.filter(u => (P.prog || {})[u.id]).length} / ${units.length}</span></div>
-    <div class="topics">${units.map((u, i) => `<button class="topic" data-unit="${i}"><span class="tp-n">${i + 1}</span><span class="tp-t"><b>${esc(u.title)}</b><small>${(P.prog || {})[u.id] ? "✓ " + P.prog[u.id] : unitSummary(u)}</small></span><span class="tp-jp">${esc((u.kanji || []).slice(0, 4).join(""))}</span></button>`).join("")}</div></section>`;
+    ${groups.map(g => `${g.stage ? `<div class="stage-h">${esc(g.stage)}<small>${g.items.filter(i => (P.prog || {})[units[i].id]).length} / ${g.items.length}</small></div>` : ""}<div class="topics">${g.items.map(row).join("")}</div>`).join("")}</section>`;
 }
-const unitSummary = u => [u.kanji && u.kanji.length ? `${u.kanji.length} кандзи` : "", u.words && u.words.length ? `${u.words.length} слов` : "", u.grammar && u.grammar.length ? `${u.grammar.length} ${plural(u.grammar.length, "тема", "темы", "тем")}` : ""].filter(Boolean).join(" · ") || "материалы урока";
+/* номер темы внутри ступени (проверочные не считаются) */
+const unitNo = i => { const us = PROG.units, st = us[i].stage; let n = 0; for (let j = 0; j <= i; j++) if (us[j].stage === st && !us[j].check) n++; return n; };
+const unitSummary = u => u.theory ? `теория · ${(u.tasks || []).length} ${plural((u.tasks || []).length, "задание", "задания", "заданий")}` : [u.kanji && u.kanji.length ? `${u.kanji.length} кандзи` : "", u.words && u.words.length ? `${u.words.length} слов` : "", u.grammar && u.grammar.length ? `${u.grammar.length} ${plural(u.grammar.length, "тема", "темы", "тем")}` : ""].filter(Boolean).join(" · ") || "материалы урока";
 function bindProg(){
   const go = $("#stGo");
   if (go) go.onclick = () => {
@@ -2061,8 +2071,10 @@ function bindProg(){
 }
 /* Урок программы: кандзи, слова, грамматика → упражнения, затем всё уходит в повторение */
 function unitScreen(i){
-  chrome(false);
   const u = PROG.units[i];
+  if (u.check) return checkScreen(i);
+  if (u.theory) return themeScreen(i);
+  chrome(false);
   const words = (u.words || []).map(([w, y, t]) => ({w, y, t}));
   $("#screen").innerHTML = `
     <div class="eyebrow">Программа школы · урок ${i + 1}</div>${T("", esc(u.title), "")}
@@ -2095,6 +2107,55 @@ function unitScreen(i){
   };
 }
 
+/* Сохранить лучший результат урока программы */
+function saveProg(id, res){
+  P.prog = P.prog || {};
+  const prev = P.prog[id];
+  if (!prev || res.correct / res.total >= (+prev.split(" / ")[0]) / (+prev.split(" / ")[1] || 1)) P.prog[id] = `${res.correct} / ${res.total}`;
+}
+const nextUnit = i => { const nx = PROG.units[i + 1]; return nx ? {label:`Дальше: ${nx.title}`, run:() => unitScreen(i + 1)} : null; };
+/* Тема программы: теория → задания, тема уходит в повторение */
+function themeScreen(i){
+  chrome(false);
+  const u = PROG.units[i];
+  $("#screen").innerHTML = `
+    <div class="intro-top"><div style="display:flex;flex-direction:column;gap:10px"><div class="eyebrow">${esc(u.stage || "Программа школы")} · тема ${unitNo(i)}</div>
+    <h1 class="stack"><span class="g">${esc(u.title)}</span></h1>${u.jp ? `<div class="big" style="font-size:30px">${ruby(u.jp)}</div>` : ""}</div>${lz("think")}</div>
+    ${(u.theory || []).map(r => `<div class="rule${r.warn ? " warn" : ""}"><div class="tag">${esc(r.tag)}</div><p>${esc(r.text)}</p>${r.ex ? `<div class="ex">${ruby(r.ex)}</div>` : ""}</div>`).join("")}`;
+  actions(`<button class="btn accent" id="uGo">Начать тренировку</button><button class="btn ghost" id="uBack">К урокам</button>`);
+  $("#uBack").onclick = () => openView("prog");
+  $("#uGo").onclick = () => {
+    if (!(u.tasks || []).length){ toast("В этой теме пока нет заданий"); return; }
+    runLesson(u.title, u.tasks.map(prepTask), res => {
+      saveProg(u.id, res);
+      const D = srsDeck(); if (!D["g:" + u.id]) D["g:" + u.id] = {s:0, due:dayNo() + 1, n:0};
+      save();
+      result(res, `Тема ${unitNo(i)} · ${u.title}`, () => themeScreen(i), nextUnit(i));
+    });
+  };
+}
+/* Проверочная: по 3 задания из каждой темы от предыдущей проверочной */
+function checkScreen(i){
+  chrome(false);
+  const u = PROG.units[i], topics = [];
+  for (let j = i - 1; j >= 0 && !PROG.units[j].check; j--) if (PROG.units[j].tasks && PROG.units[j].stage === u.stage) topics.unshift(PROG.units[j]);
+  $("#screen").innerHTML = `
+    <div class="intro-top"><div style="display:flex;flex-direction:column;gap:10px"><div class="eyebrow">${esc(u.stage || "Программа школы")} · проверочная</div>${T("", esc(u.title), "")}</div>${lz("wink")}</div>
+    <p>Задания по темам:</p><div class="ex-rows">${topics.map(t => `<div class="ex-row"><span>${esc(t.title)}</span><span class="muted">${(P.prog || {})[t.id] ? "✓ " + P.prog[t.id] : "ещё не пройдена"}</span></div>`).join("")}</div>
+    <p class="note">Теории не будет — проверяем, что запомнилось. После ответа покажем пояснение.</p>`;
+  actions(`<button class="btn accent" id="uGo">Начать проверочную</button><button class="btn ghost" id="uBack">К урокам</button>`);
+  $("#uBack").onclick = () => openView("prog");
+  $("#uGo").onclick = () => {
+    const per = topics.length > 6 ? 2 : 3;
+    const tasks = shuffle(topics.flatMap(t => sample(t.tasks, Math.min(per, t.tasks.length)).map(x => Object.assign(prepTask(x), {eb:t.title})))).slice(0, 20);
+    if (!tasks.length){ toast("Пока нет тем для проверки"); return; }
+    runLesson(u.title, tasks, res => {
+      saveProg(u.id, res); save();
+      result(res, u.title, () => checkScreen(i), nextUnit(i));
+    });
+  };
+}
+
 /* =========================================================
    ПОВТОРЕНИЕ ПО РАСПИСАНИЮ, ИГРА, УМЕНИЯ
    ========================================================= */
@@ -2105,7 +2166,7 @@ function srsDeck(){ P.srs = P.srs || {}; return P.srs; }
 const WORD_IX = {};
 for (const k in KD) allWordsOf(k).forEach(w => { if (!WORD_IX[w.w]) WORD_IX[w.w] = w; });
 const kanjiEntry = k => { for (const m in KANA) if (KANA[m].kanji) for (const r of KANA[m].rows) for (const c of r.chars) if (c[0] === k) return c; return null; };
-const gramTopic = id => { for (const l in GT) { const t = (GT[l] || []).find(x => x.id === id); if (t) return t; } return null; };
+const gramTopic = id => { for (const l in GT) { const t = (GT[l] || []).find(x => x.id === id); if (t) return t; } return (PROG.units || []).find(u => u.id === id && u.tasks) || null; };
 
 /* Всё пройденное попадает в колоду: знаки, кандзи, слова с ними, темы грамматики */
 function syncDeck(){
