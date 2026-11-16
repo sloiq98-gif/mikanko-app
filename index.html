@@ -1316,6 +1316,7 @@ function explainHtml(t){
 }
 function renderTask(){
   const t = L.tasks[L.i]; refreshRoma(t); setProgress();
+  if (t.kx) KJ_EXTRA = new Set(t.kx);         // какие иероглифы ряда уже «знакомы» на этом шаге
   let pick = null, built = [], checked = false;
   window.scrollTo(0, 0);
 
@@ -1749,16 +1750,26 @@ function kanaLesson(script, rowIdx){
     ...(kj ? row.chars.flatMap(c => { const m = mainRds(c[0]); return m.length > 2 ? sample(exWords(c[0], m[2]), 4).map(w => ({...wordRead(w, exWords(c[0], m[2]).concat(rowWords)), why:clueOf(w)})) : []; }) : [])
   ]);
   if (false) insertPairs(practice, row.chars.map(c => shuffle(wordsOf(c[0]).filter(w => kunonTask(w)))[0]).filter(Boolean).map(w => kunonPair(w, rowWords)));
-  const tasks = [
-    ...row.chars.flatMap(([k, r]) => kj && KD[k].rd
+  /* Знакомство с иероглифами по одному: пока учим 千, слова с 円 ещё не показываем (円 — следующий) */
+  const steps = row.chars.flatMap(([k, r], ci) => {
+    const kx = kj ? row.chars.slice(0, ci + 1).map(c => c[0]) : [];
+    KJ_EXTRA = new Set(kx);
+    const stepWords = kj ? kx.flatMap(c => wordsOf(c)) : [];
+    const list = kj && KD[k].rd
       ? [{type:"learn", kana:k, roma:r},
-         ...mainRds(k).flatMap((rd, i, arr) => { const a = anchorOf(k, rd), ex = exWords(k, rd).filter(w => allKnown(w.w)); const chk = ex.find(w => a && w.w !== a.w) || a;
-           return [{type:"rdstep", kana:k, rd, idx:i, n:arr.length}, ...(chk ? [{...wordRead(chk, rowWords), why:clueOf(chk)}] : [])]; }),
+         ...mainRds(k).flatMap((rd, i, arr) => { const a = anchorOf(k, rd), ex = exWords(k, rd); const chk = ex.find(w => a && w.w !== a.w) || a;
+           return [{type:"rdstep", kana:k, rd, idx:i, n:arr.length}, ...(chk ? [{...wordRead(chk, stepWords), why:clueOf(chk)}] : [])]; }),
          {type:"draw", kana:k, roma:r, fresh:true}]
-      : [{type:"learn", kana:k, roma:r}, {type:"draw", kana:k, roma:r, fresh:true}]),
-    {type:"note", eyebrow:"Все знаки ряда изучены", title:"Закрепим", script:"весь ряд", lz:"peace",
+      : [{type:"learn", kana:k, roma:r}, {type:"draw", kana:k, roma:r, fresh:true}];
+    return list.map(t => ({...t, kx}));
+  });
+  KJ_EXTRA = new Set(kj ? row.chars.map(c => c[0]) : []);
+  const allRow = kj ? row.chars.map(c => c[0]) : [];
+  const tasks = [
+    ...steps,
+    {type:"note", kx:allRow, eyebrow:"Все знаки ряда изучены", title:"Закрепим", script:"весь ряд", lz:"peace",
      text: kj ? "Сейчас вперемешку: значение иероглифа, как читается слово и письмо по памяти. Если ошибётесь — Ксюша объяснит, почему так." : "Сейчас знаки вперемешку: узнать знак, найти его на слух и написать по памяти."},
-    ...spreadTasks(practice)
+    ...spreadTasks(practice).map(t => ({...t, kx:allRow}))
   ];
   runLesson(`${KANA[script].name} · ${row.title || "ряд " + row.label}`, tasks, res => {
     P[script][row.id] = true; save();
