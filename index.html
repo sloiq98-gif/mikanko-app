@@ -2955,6 +2955,11 @@ function vocabLesson(fam){
       more ? {label:`Ещё слова · осталось ${more}`, run:() => vocabLesson(fam)} : {label:"К азбуке", run:() => openView(fam)});
   });
 }
+/* на главной: слова той азбуки, где есть новые (сначала хирагана) */
+function homeVocabHtml(){
+  const V = P.vocab || {}, hasNew = f => kwAvail(f).some(w => !V[w.k]);
+  return vocabCardHtml(hasNew("hira") || !hasNew("kata") ? "hira" : "kata");
+}
 function vocabCardHtml(fam){
   const pool = kwAvail(fam), V = P.vocab || {}, learned = pool.filter(w => V[w.k]).length, fresh = pool.length - learned;
   if (!pool.length) return `<button class="vocab-card" disabled><span class="glyph">📖</span><span><b>Изучать слова</b><small>Откроется после первого ряда: слова подбираются только из пройденных знаков</small></span></button>`;
@@ -2993,6 +2998,7 @@ function hubHtml(){
       ${lz("hi", "hero-lz")}
     </div>
     ${startHtml()}
+    ${homeVocabHtml()}
     ${todayHtml()}
     <div class="folders">
       ${folderTile("abc", `${h.done + k.done} / ${h.total + k.total} рядов`, (h.done + k.done) / (h.total + k.total))}
