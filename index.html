@@ -1068,7 +1068,13 @@ function chrome(inLesson){
   syncBack();
 }
 $("#homeBtn").onclick = () => { view = "home"; home(); };
-$("#closeBtn").onclick = () => home();
+/* выход из урока — со вторым нажатием, чтобы случайно не потерять урок */
+$("#closeBtn").onclick = e => {
+  const b = e.currentTarget;
+  if (b.dataset.sure){ clearTimeout(b._t); delete b.dataset.sure; b.textContent = "Выйти"; return home(); }
+  b.dataset.sure = "1"; b.textContent = "Точно выйти?";
+  b._t = setTimeout(() => { delete b.dataset.sure; b.textContent = "Выйти"; }, 3000);
+};
 
 /* =========================================================
    ПРОПИСИ (рисование пальцем)
@@ -1331,17 +1337,18 @@ function renderTask(){
       ${isKanji(t.kana) ? ksSay(`Это 「${esc(t.kana)}」 — «${esc(t.roma)}». ${KD[t.kana].m ? esc(KD[t.kana].m) + " " : ""}Обведите по порядку черт, а чтения разберём дальше.`)
         : tipOf(t.kana) ? `<p class="kj-mn"><span><b>Совет:</b> ${esc(tipOf(t.kana))}</span></p>` : ""}
       <div class="pad-wrap"><div id="padHost" style="width:100%;display:flex;justify-content:center"></div>
-        <div class="pad-tools"><button class="chip-btn" id="ord" aria-pressed="${ST().order}">Порядок черт</button><button class="chip-btn" id="clr">Стереть</button><button class="chip-btn" id="gh" aria-pressed="${ST().hint}">Подсказка</button></div></div>
+        <div class="pad-tools"><button class="chip-btn" id="ord" aria-pressed="${ST().order}">Порядок черт</button><button class="chip-btn" id="clr">Стереть</button><button class="chip-btn" id="gh" aria-pressed="true">Образец: вкл</button></div></div>
 `;
-    const pad = makePad($("#padHost"), t.kana, {ghost:ST().hint});
-    pad.onDone = () => { $("#next").classList.add("accent"); $("#next").textContent = "Отлично, дальше"; };
+    /* на шаге знакомства образец для обводки виден всегда; кнопка прячет его только в этом шаге и ничего не запоминает */
+    const pad = makePad($("#padHost"), t.kana, {ghost:true});
+    pad.onDone = () => { $("#next").classList.remove("ghost"); $("#next").classList.add("accent"); $("#next").textContent = "Отлично, дальше"; };
     $("#ord").onclick = e => { const on = !ST().order; setST({order:on}); e.currentTarget.setAttribute("aria-pressed", String(on)); on ? pad.playOrder() : pad.stopOrder(); };
     if (ST().order) setTimeout(() => pad.playOrder(), 300);
-    $("#clr").onclick = () => { pad.clear(); $("#next").textContent = "Дальше"; };
-    $("#gh").onclick = e => { const on = !ST().hint; setST({hint:on}); pad.setGhost(on); e.currentTarget.setAttribute("aria-pressed", String(on)); };
+    $("#clr").onclick = () => { pad.clear(); $("#next").classList.remove("accent"); $("#next").classList.add("ghost"); $("#next").textContent = "Пропустить обводку"; };
+    $("#gh").onclick = e => { const on = e.currentTarget.getAttribute("aria-pressed") !== "true"; pad.setGhost(on); e.currentTarget.setAttribute("aria-pressed", String(on)); e.currentTarget.textContent = on ? "Образец: вкл" : "Образец: выкл"; };
     $(".speak").onclick = () => sayChar(t.kana);
     sayChar(t.kana); ksTalk();
-    actions(`<button class="btn accent" id="next">Дальше</button>`);
+    actions(`<button class="btn ghost" id="next">Пропустить обводку</button>`);
     $("#next").onclick = next;
     return;
   }
@@ -1461,7 +1468,7 @@ function renderTask(){
       if (graded) return; graded = true;
       pad.reveal();
       srsMark(t, ok);
-      if (ok) L.correct++; else { L.tasks.push({...t}); L.graded++; }      // знак с ошибками вернётся в конце
+      if (ok) L.correct++; else { if ((t.rep || 0) < 2) L.tasks.push({...t, rep:(t.rep || 0) + 1}); L.graded++; }      // знак с ошибками вернётся в конце, но не больше двух раз — иначе урок не кончается
       $("#fb").innerHTML = html;
       actions(`<button class="btn accent" id="nx">Дальше</button>`); $("#nx").onclick = next;
     };
@@ -1735,7 +1742,7 @@ function kanaLesson(script, rowIdx){
   const row = KANA[script].rows[rowIdx], pool = rowPool(script, rowIdx), kj = !!KANA[script].kanji;
   KJ_EXTRA = new Set(kj ? row.chars.map(c => c[0]) : []);
   /* составные слова — только из уже знакомых иероглифов (пройденные ряды + этот) */
-  const known = new Set(kj ? KANA[script].rows.filter((r, i) => i === rowIdx || (P[script] && P[script][r.id])).flatMap(r => r.chars.map(c => c[0])) : []);
+  const known = new Set(kj ? KANA[script].rows.filter((r, i) => i === rowIdx || (P[script] && P[script][r.id]) || P.skip[script]).flatMap(r => r.chars.map(c => c[0])) : []);
   const allKnown = w => [...w].filter(ch => isKanji(ch)).every(ch => known.has(ch));
   const rowWords = kj ? row.chars.flatMap(c => wordsOf(c[0])) : [];
   const practice = shuffle([
@@ -1773,7 +1780,9 @@ function kanaLesson(script, rowIdx){
   ];
   runLesson(`${KANA[script].name} · ${row.title || "ряд " + row.label}`, tasks, res => {
     P[script][row.id] = true; save();
-    result(res, `${row.title || "Ряд " + row.label} изучен`, () => kanaLesson(script, rowIdx), {label:"Пройти тест на время", run:() => kanaTest(script, rowIdx)});
+    const nextRow = KANA[script].rows[rowIdx + 1];
+    result(res, `${row.title || "Ряд " + row.label} изучен`, () => kanaLesson(script, rowIdx),
+      nextRow ? {label:`Дальше: ${nextRow.title || "ряд " + nextRow.label}`, run:() => rowMenu(script, rowIdx + 1)} : {label:"Пройти тест на время", run:() => kanaTest(script, rowIdx)});
   });
   L.ks = kj;
 }
@@ -1783,7 +1792,10 @@ function testTasks(script, rowIdx){
   const st = ST(), row = KANA[script].rows[rowIdx];
   let pool = poolUpTo(script, rowIdx); if (pool.length < st.options + 1) pool = allChars(script);
   const kj = !!KANA[script].kanji, rowWords = kj ? row.chars.flatMap(c => wordsOf(c[0])) : [];
-  const makers = kj ? [recog, reverse, c => wordRead(pickWords(c[0], 1)[0], rowWords, st.options), c => wordRead(pickWords(c[0], 1)[0], rowWords, st.options), c => wordWrite(pickWords(c[0], 1)[0], rowWords, st.options)]
+  if (kj) KJ_EXTRA = new Set(row.chars.map(c => c[0]));     // иероглифы ряда считаются знакомыми (иначе у 校, 室 не находится слов)
+  /* если у иероглифа пока нет ни одного слова из знакомых знаков — вместо вопроса по слову спрашиваем значение */
+  const byWord = f => (c, pool, n) => { const w = pickWords(c[0], 1)[0]; return w ? f(w, rowWords, n) : recog(c, pool, n); };
+  const makers = kj ? [recog, reverse, byWord(wordRead), byWord(wordRead), byWord(wordWrite)]
     : [recog, reverse].concat(st.mute || (voicesReady() && !canSpeak()) ? [] : [listen]);
   const out = []; let cycle = [];
   while (out.length < st.count){
@@ -1810,6 +1822,7 @@ function skipTest(scripts){
   const chars = scripts.flatMap(s => allChars(s));
   const tasks = sample(chars, 12).map(c => recog(c, chars));
   const name = scripts.length > 1 ? "Хирагана и катакана" : KANA[scripts[0]].name;
+  const isKj = scripts.some(s => KANA[s].kanji);
   runLesson(`Тест · ${name}`, tasks, res => {
     const passed = res.correct >= 10;
     if (passed){ scripts.forEach(s => P.skip[s] = true); save(); }
@@ -1817,8 +1830,8 @@ function skipTest(scripts){
     $("#screen").innerHTML = `
       <div class="eyebrow">Проверка уровня</div>
       <div class="result-top"><div class="score">${res.correct}<small> / ${res.total}</small></div>${lz(passed ? "cool" : "hmm")}</div>
-      ${passed ? T("", "Азбука", "зачтена") : T("Стоит", "повторить", "")}
-      <p>${passed ? `${esc(name)} отмечена как пройденная. Можно идти дальше, а уроки остаются открытыми для повторения.` : "Для зачёта нужно 10 из 12. Пройдите ряды, где были ошибки, и попробуйте снова."}</p>`;
+      ${passed ? (isKj ? T("", "Кандзи", "зачтены") : T("", "Азбука", "зачтена")) : T("Стоит", "повторить", "")}
+      <p>${passed ? `${esc(name)} ${isKj ? "отмечены как пройденные" : "отмечена как пройденная"}. Можно идти дальше, а уроки остаются открытыми для повторения.` : "Для зачёта нужно 10 из 12. Пройдите ряды, где были ошибки, и попробуйте снова."}</p>`;
     actions(`<button class="btn accent" id="toMap">К курсу</button><button class="btn ghost" id="retry">Пройти тест ещё раз</button>`);
     $("#toMap").onclick = () => courseMap();
     $("#retry").onclick = () => skipTest(scripts);
@@ -1831,7 +1844,7 @@ function skipTest(scripts){
 function result(res, title, again, extra){
   chrome(false);
   const pct = res.total ? res.correct / res.total : 1;
-  const msg = pct === 1 ? "Без единой ошибки." : pct >= .7 ? "Хорошо. Знаки с ошибками вернутся на повторение." : "Пройдите урок ещё раз, чтобы закрепить.";
+  const msg = pct === 1 ? "Без единой ошибки." : pct >= .7 ? "То, в чём ошиблись, стоит пройти ещё раз." : "Пройдите урок ещё раз, чтобы закрепить.";
   $("#screen").innerHTML = `
     <div class="eyebrow">${esc(title)}</div>
     <div class="result-top"><div class="score">${res.correct}<small> / ${res.total}</small></div>${lz(pct === 1 ? "cool" : pct >= .7 ? "peace" : "sad")}</div>
@@ -1877,7 +1890,7 @@ function rdStepText(k, rd, idx, last){
   const rule = rd.k === "on" ? "Его обычно слышно в словах из нескольких иероглифов." : "Его видно, когда иероглиф стоит один или после него идёт хвостик хираганы.";
   return `${idx ? "А ещё" : "Первое чтение"} — ${kind}: <b class="jp">${esc(rd.r)}</b>, ${esc(rd.n)}. ${NUM_KANJI.has(k) && rd.k === "on" ? "Так считают вслух: いち、に、さん…" : NUM_KANJI.has(k) && rd.k === "kun" ? "Так считают предметы: ひとつ、ふたつ… — с хвостиком つ." : rule}`
     + (a ? ` Например, <b class="jp">${esc(a.w)}</b> — <b class="jp">${esc(a.y)}</b>, «${esc(a.t)}».` : "")
-    + (last && lockedN ? ` Есть ещё ${lockedN} ${plural(lockedN, "чтение", "чтения", "чтений")} — они откроются позже в повторении. Пока хватит этих.` : "");
+    + (last && lockedN ? `Есть ещё ${lockedN} ${plural(lockedN, "чтение", "чтения", "чтений")} — ${lockedN === 1 ? "оно откроется" : "они откроются"} позже в повторении. Пока хватит этих.` : "");
 }
 
 /* =========================================================
@@ -1891,7 +1904,7 @@ const rdId = rd => rd.k + ":" + rd.r;
 let KJ_EXTRA = new Set();
 function knownKanji(){
   const s = new Set(KJ_EXTRA);
-  for (const m in KANA) if (KANA[m].kanji) KANA[m].rows.forEach(r => { if (P[m] && P[m][r.id]) r.chars.forEach(c => s.add(c[0])); });
+  for (const m in KANA) if (KANA[m].kanji) KANA[m].rows.forEach(r => { if ((P[m] && P[m][r.id]) || P.skip[m]) r.chars.forEach(c => s.add(c[0])); });   // зачтённые тестом тоже знакомы
   return s;
 }
 const KJ_FREE = new Set(["曜"]);   // 曜 отдельно не учим: 〜曜日 разбирается целиком в теории про дни недели
@@ -2232,7 +2245,7 @@ function syncDeck(){
   for (const m in KANA){
     const kj = !!KANA[m].kanji;
     KANA[m].rows.forEach(r => {
-      const skipped = !kj && P.skip[m];
+      const skipped = P.skip[m];     // зачтённое тестом (и кана, и кандзи) идёт в повторение
       if (!(P[m] && P[m][r.id]) && !skipped) return;
       r.chars.forEach(c => {
         add("c:" + c[0], skipped);
@@ -2273,7 +2286,9 @@ function srsTask(id, ids){
     t = r < .15 && KVG[key] ? {type:"draw", kana:key, roma:c[1]} : (r < .6 ? recog : reverse)(c, full);
   } else if (kind === "c"){
     const c = ROMA_OF[key]; if (!c) return null;
-    const fam = familyOf(key), own = Object.keys(KANA).filter(m => KANA[m].family === fam).flatMap(m => allChars(m));
+    const fam = familyOf(key), all = Object.keys(KANA).filter(m => KANA[m].family === fam).flatMap(m => allChars(m));
+    /* варианты ответа — только из уже изученных знаков, иначе новичок видит きゅ, りょ и угадывает методом исключения */
+    const deck = srsDeck(), learned = all.filter(x => deck["c:" + x[0]]), own = learned.length >= 4 ? learned : all.slice(0, 10);
     const mk = [recog, recog, reverse].concat(canListen() ? [listen] : []);
     t = Math.random() < .15 && KVG[key] ? {type:"draw", kana:key, roma:c[1]} : mk[Math.floor(Math.random() * mk.length)](c, own);
   } else if (kind === "w"){
@@ -2353,19 +2368,20 @@ function gameIntro(){
   chrome(false);
   const it = gameItems(), n = {kana:it.kana.length, kanji:it.kanji.length, words:it.words.length};
   n.all = n.kana + n.kanji + n.words;
-  const demo = n.all < 6;
+  const demo = n.all < 10;      // меньше двух рядов — незнакомыми знаками играть нельзя, игра закрыта
   if (!demo && (n[gSrc] || 0) < 4) gSrc = "all";
   const best = (P.game || {}).best || 0;
   $("#screen").innerHTML = `
     <div class="intro-top"><div style="display:flex;flex-direction:column;gap:10px"><div class="eyebrow">Мини-игра</div>${T("Падающие", "слова", "")}</div>${lz("joy")}</div>
     <p>Сверху падают знаки и слова, которые вы уже прошли. Успейте выбрать правильное чтение или перевод, пока слово не упало. Каждые 6 верных ответов скорость растёт.</p>
     <p class="muted">3 жизни. Ошибки из игры попадут в завтрашнее повторение.</p>
-    ${demo ? `<div class="g-tip">Пока вы прошли мало, поэтому играем на всей хирагане. Когда пройдёте ряды, игра соберётся из ваших слов.</div>` :
+    ${demo ? `<div class="g-tip">Игра собирается только из того, что вы уже прошли. Она откроется после двух рядов азбуки${n.all ? ` — сейчас изучено знаков: ${n.all}` : ""}.</div>` :
     `<div class="lvl-tabs">${Object.keys(G_SRC).map(k => `<button class="lvl" data-gsrc="${k}" aria-pressed="${k === gSrc}" ${n[k] >= 4 ? "" : "disabled"}>${G_SRC[k]}<small>${n[k]}</small></button>`).join("")}</div>`}
     ${best ? `<p class="muted">Ваш рекорд: <b>${best}</b></p>` : ""}`;
-  actions(`<button class="btn accent" id="play">Играть</button><button class="btn ghost" id="toMap">На главную</button>`);
+  actions(demo ? `<button class="btn accent" id="goH">К азбуке</button><button class="btn ghost" id="toMap">На главную</button>` : `<button class="btn accent" id="play">Играть</button><button class="btn ghost" id="toMap">На главную</button>`);
   $$("[data-gsrc]").forEach(b => b.onclick = () => { gSrc = b.dataset.gsrc; gameIntro(); });
-  $("#play").onclick = () => gameStart(demo ? {kana:allChars("hira").map(c => ({q:c[0], a:c[0], kind:"kana", say:c[0]})), kanji:[], words:[]} : it);
+  if (demo){ $("#goH").onclick = () => openView("hira"); $("#toMap").onclick = () => home(); return; }
+  $("#play").onclick = () => gameStart(it);
   $("#toMap").onclick = () => home();
 }
 const gLabel = x => x.kind === "kana" ? romaOf(x.a, x.a) : x.a;
@@ -2481,7 +2497,7 @@ function gameOver(){
 /* =========================================================
    УМЕНИЯ: что вы реально можете после пройденного
    ========================================================= */
-const rowsDone = (m, ids) => { const md = KANA[m]; if (!md) return [0, ids ? ids.length : 1]; const rows = ids ? md.rows.filter(r => ids.includes(r.id)) : md.rows; return [rows.filter(r => (P[m] && P[m][r.id]) || (!md.kanji && P.skip[m])).length, rows.length]; };
+const rowsDone = (m, ids) => { const md = KANA[m]; if (!md) return [0, ids ? ids.length : 1]; const rows = ids ? md.rows.filter(r => ids.includes(r.id)) : md.rows; return [rows.filter(r => (P[m] && P[m][r.id]) || P.skip[m]).length, rows.length]; };
 const sumP = (...ps) => ps.reduce((a, p) => [a[0] + p[0], a[1] + p[1]], [0, 0]);
 const gramDone = ids => [ids.filter(id => P.grammar[id]).length, ids.length];
 const levelGram = l => gramDone((GT[l] || []).map(t => t.id));
@@ -2586,14 +2602,17 @@ function fcIntro(){
   const it = fcItems(), n = {hira:it.hira.length, kata:it.kata.length, kanji:it.kanji.length, words:it.words.length};
   n.mix = n.hira + n.kata + n.kanji + n.words;
   if ((n[fcSet] || 0) < 3) fcSet = Object.keys(FC_SETS).find(k => n[k] >= 3) || "mix";
-  const avail = n[fcSet] || 0, best = ((P.fc || {}).best || {})[fcSet + fcPairs];
+  const avail = n[fcSet] || 0;
+  if (fcPairs > Math.max(6, avail)) fcPairs = 6;     // не оставляем выбранной недоступную кнопку
+  const best = ((P.fc || {}).best || {})[fcSet + fcPairs];
   $("#screen").innerHTML = `
     <div class="intro-top"><div style="display:flex;flex-direction:column;gap:10px"><div class="eyebrow">Мини-игра</div>${T("Найди", "пару", "")}</div>${lz("think")}</div>
     <p>На столе лежат карточки рубашкой вверх: половина на японском, половина — чтение или перевод. Откройте одну, затем найдите к ней пару. Совпало — карточки остаются открытыми. Нет — переворачиваются обратно, запоминайте, где что лежит.</p>
     ${n.mix >= 3 ? `<div class="module-top"><h2>Что на карточках</h2></div>
     <div class="lvl-tabs">${Object.keys(FC_SETS).map(k => `<button class="lvl" data-fcs="${k}" aria-pressed="${k === fcSet}" ${n[k] >= 3 ? "" : "disabled"}>${FC_SETS[k]}<small>${n[k]}</small></button>`).join("")}</div>
     <div class="module-top"><h2>Сколько пар</h2></div>
-    <div class="lvl-tabs">${[6, 10, 15].map(k => `<button class="lvl" data-fcp="${k}" aria-pressed="${k === fcPairs}" ${avail >= k || k === 6 ? "" : "disabled"}>${k} пар<small>${k * 2} карт</small></button>`).join("")}</div>
+    <div class="lvl-tabs">${[6, 10, 15].map(k => { const real = k === 6 ? Math.min(6, avail) : k; /* если изучено меньше 6 — честно пишем, сколько пар разложим */
+      return `<button class="lvl" data-fcp="${k}" aria-pressed="${k === fcPairs}" ${avail >= k || k === 6 ? "" : "disabled"}>${real} ${plural(real, "пара", "пары", "пар")}<small>${real * 2} карт</small></button>`; }).join("")}</div>
     ${best ? `<p class="muted">Ваш рекорд: ${best.moves} ходов · ${fmtSec(best.secs)}</p>` : ""}`
     : `<div class="g-tip">Пока карточек мало. Пройдите хотя бы один ряд азбуки, группу кандзи или тренировку «Слова с картинками» — и они появятся здесь.</div>`}`;
   actions(n.mix >= 3 ? `<button class="btn accent" id="fcGo">Разложить карточки</button><button class="btn ghost" id="toMap">На главную</button>` : `<button class="btn accent" id="toMap">На главную</button>`);
@@ -2773,9 +2792,11 @@ const kanjiMeaning = k => { for (const m in KANA) if (KANA[m].kanji) for (const 
 const KTIPS_LAT = window.KANA_TIPS_LAT || {};
 const tipOf = k => (ROMA === "lat" && (KTIPS_LAT[k] || KTIPS_LAT[toHira(k)])) || KTIPS[k] || KTIPS[toHira(k)] || "";
 const guideKeyOf = mod => KANA[mod] && KANA[mod].kanji ? "kanji" : mod;
+/* текст с фуриганой вида 今日[きょう] — через ruby, иначе разметка видна как есть */
+const fmtJ = s => /[\u4e00-\u9fff\u3040-\u30ff]\[[^\]]+\]/.test(s) ? ruby(s).replace(/\*([^*]+)\*/g, "<b>$1</b>") : fmt(s);
 function guideBlock(b){
-  if (b.p) return `<p>${fmt(b.p)}</p>`;
-  if (b.tip) return `<div class="g-tip">${fmt(b.tip)}</div>`;
+  if (b.p) return `<p>${fmtJ(b.p)}</p>`;
+  if (b.tip) return `<div class="g-tip">${fmtJ(b.tip)}</div>`;
   if (b.ul) return `<ul class="g-ul">${b.ul.map(x => `<li>${ruby(x).replace(/\*([^*]+)\*/g, "<b>$1</b>")}</li>`).join("")}</ul>`;
   if (b.ex) return `<div class="g-ex"><div class="jp">${ruby(b.ex)}</div>${b.ru ? `<small>${esc(b.ru)}</small>` : ""}</div>`;
   if (b.vs) return `<div class="g-vs">${b.vs.map(([j, r]) => `<div><span class="jp">${ruby(j)}</span><small>${esc(r)}</small></div>`).join("")}</div>`;
@@ -2962,13 +2983,18 @@ function sectionHead(key){
   return `<div class="sec-head"><button class="back-btn" id="secBack" aria-label="Назад">←</button><div class="sec-title"><span class="hub-g sm">${SECTIONS[key].glyph}</span><h1 class="stack"><span class="g">${SECTIONS[key].title}</span></h1></div></div>
     ${(v => v.length > 1 ? `<div class="sec-tabs">${v.map(k => `<button class="lvl" data-view="${k}" aria-pressed="${k === key}">${SECTIONS[k].title}</button>`).join("")}</div>` : "")((FOLDERS[folderOf(key)] || {views:[key]}).views)}`;
 }
+/* Новичок без азбуки открыл кандзи или грамматику: там всё на хирагане — подсказываем начать с неё */
+function kanaGate(){
+  const started = P.skip.hira || Object.values(P.hira || {}).some(Boolean);
+  return started ? "" : `<div class="g-tip" style="margin:0 0 14px">Чтения и ответы здесь записаны хираганой. Если вы её ещё не знаете, начните с азбуки, а если знаете — пройдите там тест «Уже знаю».<br><button class="btn accent" data-view="hira" style="margin-top:10px;width:100%">Начать с хираганы</button></div>`;
+}
 function courseMap(){
   chrome(false);
   KJ_EXTRA = new Set();
   let html;
   if (view === "home" || !SECTIONS[view]) html = hubHtml();
-  else if (view === "gram") html = sectionHead("gram") + grammarHtml();
-  else if (view === "kanji") html = sectionHead("kanji") + kanjiHtml();
+  else if (view === "gram") html = sectionHead("gram") + kanaGate() + grammarHtml();
+  else if (view === "kanji") html = sectionHead("kanji") + kanaGate() + kanjiHtml();
   else if (view === "train") html = sectionHead("train") + trainerHtml();
   else if (view === "prog") html = sectionHead("prog") + progHtml();
   else if (view === "trip") html = sectionHead("trip") + tripHtml();
@@ -3108,7 +3134,8 @@ function mockResult(level, results, log){
   const langPts = lang.length ? Math.round(sum(lang, "correct") / sum(lang, "total") * 120) : 0;
   const lisPts = lis.length ? Math.round(sum(lis, "correct") / sum(lis, "total") * 60) : null;
   const total = langPts + (lisPts || 0);
-  const pass = lisPts !== null && total >= 80 && langPts >= 38 && lisPts >= 19;
+  const need = level === "N4" ? 90 : 80;      // проходной балл: N5 — 80, N4 — 90 из 180
+  const pass = lisPts !== null && total >= need && langPts >= 38 && lisPts >= 19;
   P.jlpt = P.jlpt || {};
   const prev = P.jlpt[level];
   if (!prev || total > prev.total) P.jlpt[level] = {total, pass};
@@ -3123,8 +3150,8 @@ function mockResult(level, results, log){
       <div class="set-row"><div class="set-txt"><b>Аудирование</b><small>минимум 19 из 60</small></div><b class="${lisPts !== null && lisPts >= 19 ? "ok-t" : "bad-t"}">${lisPts === null ? "пропущено" : lisPts + " / 60"}</b></div>
       ${results.map(r => `<div class="set-row"><div class="set-txt"><b>${r.name}</b><small>${r.ru}</small></div><span>${r.correct} / ${r.total}</span></div>`).join("")}
     </div>
-    <p class="note">Для сдачи нужно 80 из 180 и минимум по каждой части. Балл пересчитан из процента верных ответов и не равен официальному.</p>
-    ${wrong.length ? `<h2>Разбор ошибок</h2>${wrong.map(x => `<div class="rule"><div class="tag">${esc(x.sec)}</div>${x.t.passage ? `<p class="muted jp">${esc(x.t.passage).slice(0, 60)}…</p>` : ""}<div class="ex">${x.t.audio ? "🔊 " + esc(x.t.audio) : x.t.jp ? ruby(x.t.jp) : esc(x.t.ru || "")}</div><p>Верно: <b class="jp">${x.t.type === "build" ? x.t.answer.map(ruby).join(" ") : ruby(x.t.options[x.t.answer])}</b>${x.given ? ` · ваш ответ: <span class="jp">${x.given}</span>` : ""}</p></div>`).join("")}` : `<p>Ни одной ошибки!</p>`}`;
+    <p class="note">Для сдачи ${level} нужно ${need} из 180 и минимум по каждой части. Балл пересчитан из процента верных ответов и не равен официальному.</p>
+    ${wrong.length ? `<h2>Разбор ошибок</h2>${wrong.map(x => `<div class="rule"><div class="tag">${esc(x.sec)}</div>${x.t.passage ? `<p class="muted jp">${esc(x.t.passage).slice(0, 60)}…</p>` : ""}<div class="ex">${x.t.audio ? "🔊 " + ruby(x.t.audio) : x.t.jp ? ruby(x.t.jp) : esc(x.t.ru || "")}</div><p>Верно: <b class="jp">${x.t.type === "build" ? x.t.answer.map(ruby).join(" ") : ruby(x.t.options[x.t.answer])}</b>${x.given ? ` · ваш ответ: <span class="jp">${x.given}</span>` : ""}</p></div>`).join("")}` : `<p>Ни одной ошибки!</p>`}`;
   actions(`<button class="btn accent" id="toMap">К курсу</button><button class="btn ghost" id="again">Пройти ещё раз</button>`);
   $("#toMap").onclick = () => courseMap();
   $("#again").onclick = () => mockIntro(level);
