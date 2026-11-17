@@ -1499,26 +1499,29 @@ function renderTask(){
   }
 
   if (t.type === "choice"){
-    const promptHtml = t.audio
+    const promptHtml = t.audio && L.exam
+      ? `<button class="speak big-speak" aria-label="Прослушать">${speakIcon}</button><span class="muted" id="once">Запись звучит один раз, как на экзамене. Нажмите, когда будете готовы</span>`
+      : t.audio
       ? `<button class="speak big-speak" aria-label="Послушать ещё раз">${speakIcon}</button><span class="muted">нажмите, чтобы послушать ещё раз</span>`
       : t.roma
       ? `<div class="roma${t.romaSm ? " sm" : ""}">${esc(t.roma)}</div>`
       : t.jp ? `<div class="big${t.jpHl ? " hl" : ""}${plain(t.jp).length > 6 ? " sent" : ""}" style="${t.jpSize ? "font-size:" + t.jpSize : "font-size:46px"}">${ruby(t.jp).replace(/\n/g, "<br>")}</div>${L.exam ? "" : `<button class="speak" aria-label="Послушать">${speakIcon}</button>`}` : "";
     $("#screen").innerHTML = `
       <div class="eyebrow">${esc(t.q)}</div>
-      ${t.passage ? `<div class="passage">${ruby(t.passage)}</div>` : ""}
+      ${t.passage ? `<div class="passage">${ruby(t.passage).replace(/\n/g, "<br>")}</div>` : ""}
       <div class="prompt">${promptHtml}</div>
-      ${t.sub ? `<p class="muted">${esc(t.sub)}</p>` : ""}
+      ${t.sub ? `<p class="muted">${ruby(t.sub)}</p>` : ""}
       <div class="options${t.grid ? " grid2" : ""}">
         ${t.options.map((o, k) => `<button class="opt${t.optKana ? " kana" : ""}" data-v="${k}">${t.optJp ? `<span class="jp">${ruby(o)}</span>` : ruby(o)}</button>`).join("")}
       </div><div id="fb"></div>`;
-    const sp = $(".speak"); if (sp) sp.onclick = () => say(t.audio || t.jp);
-    if (t.audio) setTimeout(() => say(t.audio), 250);
+    const sp = $(".speak");
+    if (sp && t.audio && L.exam) sp.onclick = () => { if (t._heard) return; t._heard = true; say(t.audio); sp.disabled = true; sp.style.opacity = .4; $("#once").textContent = "Прослушано"; };
+    else { if (sp) sp.onclick = () => say(t.audio || t.jp); if (t.audio) setTimeout(() => say(t.audio), 250); }
     $$(".opt").forEach(b => b.onclick = () => {
       if (checked) return;
       $$(".opt").forEach(x => x.classList.remove("sel"));
       b.classList.add("sel"); pick = +b.dataset.v; $("#check").disabled = false;
-      if (L.exam){ checked = true; const ok = pick === t.answer; if (ok) L.correct++; (L.log = L.log || []).push({t, ok, given:ruby(t.options[pick])}); $$(".opt").forEach(x => x.disabled = true); setTimeout(next, 220); return; }
+      if (L.exam) return;     // на экзамене ответ можно поменять, пока не нажали «Дальше»
       if (L.test){ $("#check").click(); if (pick === t.answer && ST().autoNext){ $("#actions").innerHTML = ""; setTimeout(() => { if (L && L.tasks[L.i] === t) next(); }, 650); } }
     });
   }
@@ -1573,10 +1576,11 @@ function renderTask(){
   }
 
   actions(`<button class="btn" id="check" disabled>Проверить</button>`);
-  if (L.exam && t.type === "choice") $("#check").hidden = true;
+  if (L.exam) $("#check").textContent = "Дальше";
   $("#check").onclick = () => {
     if (checked) return next();
     checked = true;
+    if (L.exam && t.type === "choice"){ const ok = pick === t.answer; if (ok) L.correct++; (L.log = L.log || []).push({t, ok, given:ruby(t.options[pick])}); return next(); }
     if (L.exam && t.type === "build"){ const ok = built.map(k => plain(t._bank[k])).join("") === t.answer.map(plain).join(""); if (ok) L.correct++; (L.log = L.log || []).push({t, ok, given:built.map(k => ruby(t._bank[k])).join(" ")}); return next(); }
     let ok, right;
     if (t.type === "choice"){
@@ -1587,7 +1591,9 @@ function renderTask(){
       if (t.say) say(t.say);
     } else {
       const norm = x => t.ruTiles ? x.toLowerCase() : x;
-      ok = norm(built.map(k => plain(t._bank[k])).join("|")) === norm(t.answer.map(plain).join("|")) || norm(built.map(k => plain(t._bank[k])).join("")) === norm(t.answer.map(plain).join(""));
+      /* alts — другие допустимые порядки плашек (かばんを兄に… тоже верно) */
+      const got = norm(built.map(k => plain(t._bank[k])).join(""));
+      ok = [t.answer, ...(t.alts || [])].some(a => got === norm(a.map(plain).join("")));
       right = t.ruTiles ? esc(t.answer.join(" ")) : `<span class="jp">${t.answer.map(ruby).join("")}${t.kanaTiles ? "" : "。"}</span>`;
       $$(".tile").forEach(b => b.disabled = true);
       $("#slot").classList.add(ok ? "ok" : "bad");
@@ -3147,7 +3153,7 @@ function runMock(level){
         $("#screen").innerHTML = `
           <div class="eyebrow">Раздел ${k + 1} завершён</div>
           ${T("", `Раздел ${k + 2}`, n.ru.toLowerCase())}
-          <p>${n.name} · ${n.tasks.length} ${plural(n.tasks.length, "вопрос", "вопроса", "вопросов")} · ${n.minutes} мин.${n.listening ? " Каждую фразу можно прослушать несколько раз." : ""}</p>`;
+          <p>${n.name} · ${n.tasks.length} ${plural(n.tasks.length, "вопрос", "вопроса", "вопросов")} · ${n.minutes} мин.${n.listening ? " Каждую запись можно прослушать один раз, как на экзамене." : ""}</p>`;
         actions(`<button class="btn accent" id="go">Начать раздел</button>`);
         $("#go").onclick = () => go(k + 1);
       } else go(k + 1);
@@ -3179,7 +3185,7 @@ function mockResult(level, results, log){
       ${results.map(r => `<div class="set-row"><div class="set-txt"><b>${r.name}</b><small>${r.ru}</small></div><span>${r.correct} / ${r.total}</span></div>`).join("")}
     </div>
     <p class="note">Для сдачи ${level} нужно ${need} из 180 и минимум по каждой части. Балл пересчитан из процента верных ответов и не равен официальному.</p>
-    ${wrong.length ? `<h2>Разбор ошибок</h2>${wrong.map(x => `<div class="rule"><div class="tag">${esc(x.sec)}</div>${x.t.passage ? `<p class="muted jp">${esc(x.t.passage).slice(0, 60)}…</p>` : ""}<div class="ex">${x.t.audio ? "🔊 " + ruby(x.t.audio) : x.t.jp ? ruby(x.t.jp) : esc(x.t.ru || "")}</div><p>Верно: <b class="jp">${x.t.type === "build" ? x.t.answer.map(ruby).join(" ") : ruby(x.t.options[x.t.answer])}</b>${x.given ? ` · ваш ответ: <span class="jp">${x.given}</span>` : ""}</p></div>`).join("")}` : `<p>Ни одной ошибки!</p>`}`;
+    ${wrong.length ? `<h2>Разбор ошибок</h2>${wrong.map(x => `<div class="rule"><div class="tag">${esc(x.sec)}</div>${x.t.passage ? `<p class="muted jp">${esc(x.t.passage).slice(0, 60)}…</p>` : ""}<div class="ex">${x.t.audio ? "🔊 " + ruby(x.t.audio) : x.t.jp ? ruby(x.t.jp) : esc(x.t.ru || "")}</div><p>Верно: <b class="jp">${x.t.type === "build" ? x.t.answer.map(ruby).join(" ") : ruby(x.t.options[x.t.answer])}</b>${x.given ? ` · ваш ответ: <span class="jp">${x.given}</span>` : ""}</p>${x.t.why ? `<p class="muted">${ruby(x.t.why)}</p>` : ""}</div>`).join("")}` : `<p>Ни одной ошибки!</p>`}`;
   actions(`<button class="btn accent" id="toMap">К курсу</button><button class="btn ghost" id="again">Пройти ещё раз</button>`);
   $("#toMap").onclick = () => courseMap();
   $("#again").onclick = () => mockIntro(level);
