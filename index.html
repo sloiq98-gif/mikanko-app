@@ -599,6 +599,16 @@ main:has(.pad-wrap) .prompt .roma{font-size:44px}
   background:linear-gradient(var(--line),var(--line)) center/100% 1px no-repeat,linear-gradient(var(--line),var(--line)) center/1px 100% no-repeat;opacity:.9}
 .pad-tools{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
 .learn-card{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.vcard{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;padding:12px 0}
+.vpic{font-size:72px;line-height:1}
+.vcard .big{font-size:56px}
+.vru{font-size:22px;font-weight:700}
+.vprog{font-size:30px;letter-spacing:.12em;text-align:center}
+.vocab-card{display:flex;align-items:center;gap:14px;width:100%;text-align:left;font:inherit;color:inherit;background:var(--surface);border:1.5px solid var(--line);border-radius:20px;padding:14px 16px;margin:0 0 16px;cursor:pointer}
+.vocab-card .glyph{font-size:34px}
+.vocab-card b{display:block;font-size:17px}
+.vocab-card small{color:var(--muted)}
+.vocab-card[disabled]{opacity:.6;cursor:default}
 .start-card{display:flex;flex-direction:column;gap:10px;margin:0 0 16px}
 .start-card .btn{width:100%}
 .learn-card.kj{justify-content:flex-start;gap:16px}
@@ -660,6 +670,7 @@ button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 <script src="trainer-n4.js"></script>
 <script src="program.js"></script>
 <script src="trip.js"></script>
+<script src="kana-words.js"></script>
 <script src="testers.js"></script>
 <div class="stickers" id="stickers" aria-hidden="true"></div>
 <div class="app" id="app">
@@ -921,7 +932,7 @@ function say(text){
 let P = {level:null, hira:{}, kata:{}, skip:{}, grammar:{}};
 try { const s = JSON.parse(localStorage.getItem("mk_progress")); if (s) P = Object.assign(P, s); } catch(e){}
 const save = () => { P._t = Date.now(); try{ localStorage.setItem("mk_progress", JSON.stringify(P)); }catch(e){} try{ cloudSave(); }catch(e){} };
-function ensureP(){ for (const k in KANA) P[k] = P[k] || {}; P.skip = P.skip || {}; P.grammar = P.grammar || {}; }
+function ensureP(){ for (const k in KANA) P[k] = P[k] || {}; P.skip = P.skip || {}; P.grammar = P.grammar || {}; P.vocab = P.vocab || {}; }
 ensureP();
 
 /* ---------- Настройки тестов и обратной связи ---------- */
@@ -1290,7 +1301,7 @@ let L = null; // {title, tasks, i, correct, graded, onFinish}
 
 function runLesson(title, tasks, onFinish, opts = {}){
   stopTimer();
-  L = {exam:!!opts.exam, log:[], test:!!opts.test || !!opts.exam, title, tasks, i:0, correct:0, graded:tasks.filter(t => !["learn", "note", "readings", "newread", "rdstep"].includes(t.type)).length, onFinish, time:opts.time || 0, started:Date.now()};
+  L = {exam:!!opts.exam, log:[], test:!!opts.test || !!opts.exam, title, tasks, i:0, correct:0, graded:tasks.filter(t => !["learn", "note", "readings", "newread", "rdstep", "vintro"].includes(t.type)).length, onFinish, time:opts.time || 0, started:Date.now()};
   chrome(true);
   $("#metaLeft").textContent = title;
   if (L.time){ L.end = Date.now() + L.time * 1000; L.timer = setInterval(tick, 250); }
@@ -1449,6 +1460,24 @@ function renderTask(){
     return;
   }
 
+  if (t.type === "vintro"){        // новое слово: картинка, как пишется, перевод, звук
+    const w = t.w;
+    $("#screen").innerHTML = `
+      <div class="eyebrow">Новое слово · ${t.idx + 1} из ${t.n}</div>
+      <div class="vcard">
+        <div class="vpic" aria-hidden="true">${w.e || ""}</div>
+        <div class="big hl jp">${esc(w.k)}</div>
+        ${w.j ? `<div class="muted jp">иероглифами: ${esc(w.j)}</div>` : ""}
+        <div class="vru">${esc(w.ru)}</div>
+        <button class="speak" aria-label="Послушать">${speakIcon}</button>
+      </div>
+      <p class="muted">${esc([...w.k].map(c => romaOf(c, c)).join(" · "))}</p>`;
+    $(".speak").onclick = () => say(w.k); say(w.k);
+    actions(`<button class="btn accent" id="next">Запомнил(а), дальше</button>`);
+    $("#next").onclick = next;
+    return;
+  }
+
   if (t.type === "note"){
     $("#screen").innerHTML = `
       <div class="intro-top"><div style="display:flex;flex-direction:column;gap:10px"><div class="eyebrow">${esc(t.eyebrow || "")}</div>${T("", esc(t.title), t.script ? esc(t.script) : "")}</div>${lz(t.lz || "peace")}</div>
@@ -1460,7 +1489,8 @@ function renderTask(){
 
   if (t.type === "draw"){
     $("#screen").innerHTML = `
-      <div class="eyebrow">${t.fresh ? "Теперь сами · без подсказки" : "Напишите по памяти"}</div>
+      <div class="eyebrow">${t.wctx ? `Напишите слово «${esc(t.wctx.ru)}» · знак ${t.wctx.i + 1} из ${t.wctx.n}` : t.fresh ? "Теперь сами · без подсказки" : "Напишите по памяти"}</div>
+      ${t.wctx ? `<div class="vprog jp">${esc(t.wctx.k.slice(0, t.wctx.i))}<span class="hl">＿</span>${"＿".repeat(t.wctx.n - t.wctx.i - 1)}</div>` : ""}
       <div class="prompt"><div class="roma${isKanji(t.kana) ? " sm" : ""}">${esc(t.roma)}</div><button class="speak" aria-label="Послушать">${speakIcon}</button></div>
       <div class="pad-wrap"><div id="padHost" style="width:100%;display:flex;justify-content:center"></div>
         <div class="pad-tools"><button class="chip-btn" id="clr">Стереть</button></div></div>
@@ -1737,9 +1767,11 @@ function rowMenu(script, rowIdx){
     <button class="choice-card" id="learn"><span class="glyph">✍︎</span><span><b>Учить</b><small>Порядок черт, письмо каждого знака, затем упражнения на весь ряд</small></span></button>
     <button class="choice-card" id="test"><span class="glyph">⏱</span><span><b>Тест на время</b><small>${n} ${plural(n, "вопрос", "вопроса", "вопросов")}${ST().timer ? ` за ${n * ST().timer} сек` : ", без таймера"} · ${ST().options} ${plural(ST().options, "вариант", "варианта", "вариантов")} ответа${best ? ` · лучший результат ${best}` : ""}</small></span></button>
     ${row.guide && GUIDES[row.guide] ? `<button class="theory-card" id="rowGuide"><span class="tc-i">${esc(row.label)}</span><span><b>Теория: ${esc(GUIDES[row.guide].title.toLowerCase())}</b><small>Как читать и говорить — перед уроком</small></span></button>` : ""}
+    ${!KANA[script].kanji && KANA[script].family && kwAvail(KANA[script].family).length ? vocabCardHtml(KANA[script].family) : ""}
     <button class="linkish" id="cfg">⚙ Настройки теста</button>
     <button class="linkish quiet" id="back">← К курсу</button>`;
   actions("");
+  $$("[data-vocab]").forEach(b => b.onclick = () => vocabLesson(b.dataset.vocab));
   $("#cfg").onclick = () => settingsScreen(() => rowMenu(script, rowIdx));
   const runL = row.guide ? withGuide(row.guide, () => kanaLesson(script, rowIdx)) : () => kanaLesson(script, rowIdx);
   $("#learn").onclick = withGuide(guideKeyOf(script), KANA[script].kanji ? withGuide("kunon", runL) : runL);
@@ -2265,6 +2297,7 @@ function syncDeck(){
     });
   }
   for (const l in GT) (GT[l] || []).forEach(t => { if (P.grammar[t.id]) add("g:" + t.id); });
+  for (const k in (P.vocab || {})) if (kwByK(k)) add("v:" + k);
   save();
 }
 const srsDue = () => { const d = dayNo(); return Object.entries(srsDeck()).filter(([, x]) => x.due <= d).sort((a, b) => a[1].due - b[1].due || a[1].s - b[1].s).map(([id]) => id); };
@@ -2312,6 +2345,11 @@ function srsTask(id, ids){
     const g = gramTopic(key); if (!g || !g.tasks.length) return null;
     t = prepTask(g.tasks[Math.floor(Math.random() * g.tasks.length)]);
     t.eb = t.eb || "Грамматика · " + g.title;
+  } else if (kind === "v"){        // слово из «Изучать слова»
+    const w = kwByK(key); if (!w) return null;
+    const kn = knownKana(), x = kwTasks(w, kwAvail(kwFam(w), kn), kn);
+    const mk = [x.meaning, x.find, x.hear, x.build].filter(Boolean);
+    t = mk[Math.floor(Math.random() * mk.length)];
   }
   return t ? {...t, srs:id, why:t.why || ""} : null;
 }
@@ -2364,21 +2402,22 @@ function stopGame(){ if (G){ G.over = true; cancelAnimationFrame(G.raf); clearTi
 /* карточка игры: что падает, что выбрать, к какой карточке повторения относится */
 function gameItems(){
   syncDeck();
-  const out = {kana:[], kanji:[], words:[]};
+  const out = {kana:[], kanji:[], words:[], vocab:[]};
   Object.keys(srsDeck()).forEach(id => {
     const k = id.slice(2);
     if (id[0] === "c" && isKanji(k)){ const c = kanjiEntry(k); if (c) out.kanji.push({q:k, a:c[1], id, kind:"kanji", say:kanjiSolo(k).y}); }
     else if (id[0] === "c"){ if (ROMA_OF[k]) out.kana.push({q:k, a:k, id, kind:"kana", say:k}); }
     else if (id[0] === "w"){ const w = WORD_IX[k]; if (w) out.words.push({q:w.w, a:w.y, sub:w.t, id, kind:"words", say:w.y}); }
+    else if (id[0] === "v"){ const w = kwByK(k); if (w) out.vocab.push({q:w.k, a:w.ru, id, kind:"vocab", say:w.k}); }
   });
   return out;
 }
-const G_SRC = {all:"Всё изученное", kana:"Азбука", kanji:"Кандзи", words:"Слова"};
+const G_SRC = {all:"Всё изученное", kana:"Азбука", vocab:"Слова", kanji:"Кандзи", words:"Слова с кандзи"};
 let gSrc = "all";
 function gameIntro(){
   chrome(false);
-  const it = gameItems(), n = {kana:it.kana.length, kanji:it.kanji.length, words:it.words.length};
-  n.all = n.kana + n.kanji + n.words;
+  const it = gameItems(), n = {kana:it.kana.length, kanji:it.kanji.length, words:it.words.length, vocab:it.vocab.length};
+  n.all = n.kana + n.kanji + n.words + n.vocab;
   const demo = n.all < 10;      // меньше двух рядов — незнакомыми знаками играть нельзя, игра закрыта
   if (!demo && (n[gSrc] || 0) < 4) gSrc = "all";
   const best = (P.game || {}).best || 0;
@@ -2398,7 +2437,7 @@ function gameIntro(){
 const gLabel = x => x.kind === "kana" ? romaOf(x.a, x.a) : x.a;
 function gameStart(it){
   stopGame();
-  const groups = gSrc === "all" || !it[gSrc] || it[gSrc].length < 4 ? ["kana", "kanji", "words"].filter(k => it[k].length >= 4) : [gSrc];
+  const groups = gSrc === "all" || !it[gSrc] || it[gSrc].length < 4 ? ["kana", "vocab", "kanji", "words"].filter(k => it[k].length >= 4) : [gSrc];
   const pool = groups.flatMap(k => it[k]);
   chrome(true);
   $("#metaLeft").textContent = "Падающие слова";
@@ -2598,11 +2637,14 @@ function fcItems(){
       (fam === "kata" ? out.kata : out.hira).push({id, kind:fam, front:k, main:romaOf(k, ""), say:k});
     } else if (id[0] === "w"){
       const w = WORD_IX[k]; if (w) out.words.push({id, kind:"words", front:w.w, main:w.t, sub:w.y, say:w.y});
+    } else if (id[0] === "v"){
+      const w = kwByK(k); if (w) out.words.push({id, kind:"words", front:w.k, pic:w.e, main:w.ru, say:w.k});
     }
   });
-  const seen = P.trWords || {};
+  const seen = P.trWords || {}, kn = knownKana();
   for (const lv in TRN) (TRN[lv].words || []).forEach(w => {
-    if (!seen[w.k] || out.words.some(x => x.front === (w.j || w.k))) return;
+    /* слова из тренировки — только если все их знаки уже пройдены (иначе катакана до катаканы) */
+    if (!seen[w.k] || ![...w.k].every(c => kn.has(c)) || out.words.some(x => x.front === (w.j || w.k) || x.front === w.k)) return;
     out.words.push({kind:"words", front:w.j || w.k, pic:w.e, main:w.ru, sub:w.j ? w.k : "", say:w.k});
   });
   return out;
@@ -2865,6 +2907,60 @@ function hubCard(key, sub, pct){
   return `<button class="hub-card" data-view="${key}"><span class="hub-g">${s.glyph}</span><span class="hub-t"><b>${s.title}</b><small>${sub}</small>
     <span class="hub-bar"><i style="width:${Math.round(pct * 100)}%"></i></span></span><span class="hub-arrow" aria-hidden="true">›</span></button>`;
 }
+/* =========================================================
+   СЛОВА ПОСЛЕ АЗБУКИ: подбираются только из пройденных знаков
+   ========================================================= */
+const KW = window.KANA_WORDS || [];
+const KANA_MODS = {hira:["hira", "hiraD", "hiraY"], kata:["kata", "kataD", "kataY"]};
+function knownKana(){
+  const s = new Set(["ー"]);
+  [...KANA_MODS.hira, ...KANA_MODS.kata].forEach(m => (KANA[m] || {rows:[]}).rows.forEach(r => {
+    if ((P[m] && P[m][r.id]) || P.skip[m]) r.chars.forEach(c => [...c[0]].forEach(ch => s.add(ch)));
+  }));
+  return s;
+}
+const kwFam = w => /[\u30a1-\u30f6]/.test(w.k) ? "kata" : "hira";
+const kwByK = k => KW.find(w => w.k === k);
+function kwAvail(fam, kn = knownKana()){ return KW.filter(w => (!fam || kwFam(w) === fam) && [...w.k].every(c => kn.has(c))); }
+const kwWhy = w => `${w.k}${w.j ? `（${w.j}）` : ""} — ${w.ru}`;
+function kwTasks(w, pool, kn){
+  const others = pool.filter(x => x !== w);
+  const ruOpts = shuffle([w.ru, ...shuffle(KW.filter(x => x !== w && x.ru !== w.ru)).slice(0, 3).map(x => x.ru)]);
+  const kOpts = shuffle([w.k, ...similarPick(w.k, others.map(x => x.k), 3)]);
+  const meaning = {type:"choice", q:"Что значит слово?", jp:w.k, jpHl:true, options:ruOpts, answer:ruOpts.indexOf(w.ru), say:w.k, why:kwWhy(w)};
+  const find = kOpts.length >= 2 ? {type:"choice", q:`Как будет «${w.ru}»?`, sub:w.e || "", options:kOpts, answer:kOpts.indexOf(w.k), optKana:true, grid:true, say:w.k, why:kwWhy(w)} : null;
+  const hear = kOpts.length >= 2 && canListen() ? {type:"choice", q:"Послушайте и выберите слово", audio:w.k, options:kOpts, answer:kOpts.indexOf(w.k), optKana:true, grid:true, why:kwWhy(w)} : null;
+  const chars = [...w.k], bank = [...kn].filter(c => c !== "ー" && kwFam({k:c}) === kwFam(w) && !chars.includes(c));
+  const build = {type:"build", pic:w.e, ru:w.ru, eb:"Соберите слово из знаков", answer:chars, extra:shuffle(bank).slice(0, Math.max(2, 5 - chars.length)), kanaTiles:true, why:kwWhy(w)};
+  return {meaning, find, hear, build};
+}
+const kwWritable = w => w.k.length <= 4 && [...w.k].every(c => KVG[c]);
+function vocabLesson(fam){
+  const kn = knownKana(), pool = kwAvail(fam, kn), V = P.vocab = P.vocab || {};
+  const fresh = pool.filter(w => !V[w.k]).slice(0, 6);
+  const words = fresh.length ? fresh : sample(pool, Math.min(8, pool.length));
+  if (!words.length) return;
+  const T5 = words.map(w => kwTasks(w, pool, kn));
+  const intro = fresh.length ? words.flatMap((w, i) => [{type:"vintro", w, idx:i, n:words.length}, T5[i].meaning]) : T5.map(x => x.meaning);
+  const writeW = shuffle(words.filter(kwWritable)).slice(0, 2);
+  const practice = shuffle([...T5.flatMap(x => [x.find, x.hear, x.build]).filter(Boolean)]);
+  const writing = writeW.flatMap(w => [...w.k].map((c, i) => ({type:"draw", kana:c, roma:romaOf(c, c), wctx:{k:w.k, ru:w.ru, i, n:w.k.length}})));
+  const title = `${fam === "kata" ? "Катакана" : "Хирагана"} · слова`;
+  runLesson(title, [...intro, ...spreadTasks(practice), ...writing], res => {
+    const D = srsDeck(), d = dayNo();
+    words.forEach(w => { V[w.k] = true; if (!D["v:" + w.k]) D["v:" + w.k] = {s:0, due:d + 1, n:0}; });
+    save();
+    const more = kwAvail(fam).filter(w => !V[w.k]).length;
+    result(res, fresh.length ? `Новые слова: ${words.length}` : "Повторение слов", () => vocabLesson(fam),
+      more ? {label:`Ещё слова · осталось ${more}`, run:() => vocabLesson(fam)} : {label:"К азбуке", run:() => openView(fam)});
+  });
+}
+function vocabCardHtml(fam){
+  const pool = kwAvail(fam), V = P.vocab || {}, learned = pool.filter(w => V[w.k]).length, fresh = pool.length - learned;
+  if (!pool.length) return `<button class="vocab-card" disabled><span class="glyph">📖</span><span><b>Изучать слова</b><small>Откроется после первого ряда: слова подбираются только из пройденных знаков</small></span></button>`;
+  return `<button class="vocab-card" data-vocab="${fam}"><span class="glyph">📖</span><span><b>${fresh ? "Изучать слова" : "Повторить слова"}</b><small>${fresh ? `Новых слов из пройденных знаков: ${fresh}` : "Новые появятся после следующего ряда"} · изучено ${learned}</small></span></button>`;
+}
+
 /* Главная: понятный первый шаг — «Начать с нуля» или «Продолжить» с того ряда, где остановились */
 const START_ORDER = ["hira", "hiraD", "hiraY", "kata", "kataD", "kataY", "kanjiN5", "kanjiN4"];
 function nextStep(){
@@ -3034,7 +3130,7 @@ function courseMap(){
   else if (view === "exam") html = sectionHead("exam") + jlptHtml() + bigTestHtml(Object.keys(BIG_SETS));
   else {
     const s = SECTIONS[view], names = ["Основные", "Дакутэн", "Сочетания"];
-    html = sectionHead(view) + `<div class="sub-nav">${s.mods.map((m, i) => `<button class="chip-btn" data-jump="mod-${m}">${names[i]}</button>`).join("")}<button class="chip-btn" data-jump="bigSec">Тест</button></div>` + s.mods.map(moduleHtml).join("") + bigTestHtml(s.big);
+    html = sectionHead(view) + (KANA_MODS[view] ? vocabCardHtml(view) : "") + `<div class="sub-nav">${s.mods.map((m, i) => `<button class="chip-btn" data-jump="mod-${m}">${names[i]}</button>`).join("")}<button class="chip-btn" data-jump="bigSec">Тест</button></div>` + s.mods.map(moduleHtml).join("") + bigTestHtml(s.big);
   }
   $("#screen").innerHTML = html;
   actions("");
@@ -3042,6 +3138,7 @@ function courseMap(){
   const back = $("#secBack"); if (back) back.onclick = () => openView("home");
   $$("[data-jump]").forEach(b => b.onclick = () => { const el = document.getElementById(b.dataset.jump); if (el) el.scrollIntoView({behavior:"smooth", block:"start"}); });
   $$(".row").forEach(b => b.onclick = () => rowMenu(b.dataset.s, +b.dataset.i));
+  $$("[data-vocab]").forEach(b => b.onclick = () => vocabLesson(b.dataset.vocab));
   $$("[data-cont]").forEach(b => b.onclick = () => { const [m, i] = b.dataset.cont.split(":"); rowMenu(m, +i); });
   $$("[data-skip]").forEach(b => b.onclick = () => skipTest([b.dataset.skip]));
   $$("[data-big]").forEach(b => b.onclick = () => bigTest(b.dataset.big));
