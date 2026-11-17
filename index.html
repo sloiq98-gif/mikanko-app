@@ -260,9 +260,9 @@ main:has(.kj-mn) .pad-wrap .pad{width:min(100%,420px,max(210px,calc(var(--vh,100
 .topic.check{border-style:dashed;border-color:var(--accent)}.topic.check .tp-n{color:var(--accent)}
 
 .ks-tip{display:flex;align-items:flex-end;gap:8px;margin-top:4px;animation:ksIn .35s ease-out}
-.ks-ava{flex:none;width:64px;height:54px;border-radius:50%;overflow:hidden;background:var(--surface);border:1.5px solid var(--line);display:flex;align-items:flex-start;justify-content:center}
+.ks-ava{flex:none;width:44px;height:44px;border-radius:50%;overflow:hidden;background:var(--surface);border:1.5px solid var(--line);display:flex;align-items:flex-start;justify-content:center}
 .ks-ava img{width:100%;height:auto;margin-top:2px}
-.ks-bubble{position:relative;flex:1;min-width:0;background:var(--surface);border:1.5px solid var(--line);border-radius:16px 16px 16px 4px;padding:9px 13px 10px;font-size:14.5px;line-height:1.45}
+.ks-bubble{position:relative;flex:1;min-width:0;background:var(--surface);border:1.5px solid var(--line);border-radius:16px 16px 16px 4px;padding:8px 12px 9px;font-size:13.5px;line-height:1.4}
 .ks-name{display:block;font:700 10.5px var(--f-body);letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:1px}
 .ks-bubble .jp{font-family:var(--f-jp)}
 .feedback .ks-img{width:74px;height:auto;align-self:flex-end}
@@ -599,6 +599,12 @@ main:has(.pad-wrap) .prompt .roma{font-size:44px}
   background:linear-gradient(var(--line),var(--line)) center/100% 1px no-repeat,linear-gradient(var(--line),var(--line)) center/1px 100% no-repeat;opacity:.9}
 .pad-tools{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
 .learn-card{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.start-card{display:flex;flex-direction:column;gap:10px;margin:0 0 16px}
+.start-card .btn{width:100%}
+.learn-card.kj{justify-content:flex-start;gap:16px}
+.learn-card.kj .kj-info{align-items:flex-start;text-align:left}
+.learn-card.kj .kj-info .kj-ex{justify-content:flex-start}
+.kj-mn2{display:block;font-size:13px;line-height:1.35;color:var(--muted);margin:2px 0 4px}
 .learn-card .big{font-size:64px}
 .learn-card .roma{font-family:var(--f-body);font-size:38px;font-weight:800;line-height:1}
 
@@ -1329,12 +1335,12 @@ function renderTask(){
   if (t.type === "learn"){
     $("#screen").innerHTML = `
       <div class="eyebrow">${isKanji(t.kana) ? "Новый иероглиф · обведите по порядку черт" : "Новый знак · смотрите порядок черт и обводите"}</div>
-      <div class="learn-card">
+      <div class="learn-card${isKanji(t.kana) ? " kj" : ""}">
         <div class="big hl">${esc(t.kana)}</div>
-        ${isKanji(t.kana) ? `<div class="kj-info"><b>${esc(t.roma)}</b><span class="kj-ex">${(o => `${o.w === t.kana ? "читается" : `<span class="jp">${esc(o.w)}</span> —`} <span class="jp hl">${esc(o.y)}</span>`)(mainWord(t.kana))} <button class="speak sm" aria-label="Послушать">${speakIcon}</button></span></div>`
+        ${isKanji(t.kana) ? `<div class="kj-info"><b>${esc(t.roma)}</b>${KD[t.kana].m ? `<small class="kj-mn2">${esc(KD[t.kana].m)}</small>` : ""}<span class="kj-ex">${(o => `${o.w === t.kana ? "читается" : `<span class="jp">${esc(o.w)}</span> —`} <span class="jp hl">${esc(o.y)}</span>`)(mainWord(t.kana))} <button class="speak sm" aria-label="Послушать">${speakIcon}</button></span></div>`
           : `<div style="display:flex;align-items:center;gap:12px"><div class="roma">${esc(t.roma)}</div><button class="speak" aria-label="Послушать">${speakIcon}</button></div>`}
       </div>
-      ${isKanji(t.kana) ? ksSay(`Это 「${esc(t.kana)}」 — «${esc(t.roma)}». ${KD[t.kana].m ? esc(KD[t.kana].m) + " " : ""}Обведите по порядку черт, а чтения разберём дальше.`)
+      ${isKanji(t.kana) ? ""      /* значение и подсказка уже в карточке слева направо — отдельная плашка только мешала рисовать */
         : tipOf(t.kana) ? `<p class="kj-mn"><span><b>Совет:</b> ${esc(tipOf(t.kana))}</span></p>` : ""}
       <div class="pad-wrap"><div id="padHost" style="width:100%;display:flex;justify-content:center"></div>
         <div class="pad-tools"><button class="chip-btn" id="ord" aria-pressed="${ST().order}">Порядок черт</button><button class="chip-btn" id="clr">Стереть</button><button class="chip-btn" id="gh" aria-pressed="true">Образец: вкл</button></div></div>
@@ -1459,9 +1465,8 @@ function renderTask(){
       <div class="pad-wrap"><div id="padHost" style="width:100%;display:flex;justify-content:center"></div>
         <div class="pad-tools"><button class="chip-btn" id="clr">Стереть</button></div></div>
       <div id="fb"></div>
-      ${isKanji(t.kana) && t.fresh ? ksSay(`Теперь сами, без подсказки: 「${esc(t.kana)}」 — «${esc(t.roma)}». Ошибётесь в черте — покажу правильную.`) : ""}`;
+      `;
     const pad = makePad($("#padHost"), t.kana, {ghost:false});
-    if (isKanji(t.kana) && t.fresh) ksTalk();
     $(".speak").onclick = () => sayChar(t.kana);
     let graded = false;
     const finishDraw = (ok, html) => {
@@ -1865,7 +1870,7 @@ function result(res, title, again, extra){
 const KS_POSE = {joy:"joy", cool:"joy", peace:"smile", wink:"smile", thumbs:"joy", heart:"smile", hi:"hi", hmm:"think", think:"think", sad:"shrug", sleep:"closed", tea:"closed", coffee:"closed", peek:"closed", peekSoft:"closed", point:"point", shrug:"shrug"};
 const ksImg = (pose, cls = "") => `<img class="lizard ks-img ${cls}" src="${KS[KS_POSE[pose] || pose] || KS.closed}" alt="Ксюша">`;
 function ksSay(html, pose){
-  return `<div class="ks-tip"><span class="ks-ava"><img src="${KS[pose] || KS.closed}" alt="" ${pose ? "" : 'data-talk="1"'}></span><div class="ks-bubble"><b class="ks-name">Ксюша</b><span>${html}</span></div></div>`;
+  return `<div class="ks-tip"><span class="ks-ava"><img src="${KS[pose] || KS.closed}" alt="" ${pose ? "" : 'data-talk="1"'}></span><div class="ks-bubble"><span>${html}</span></div></div>`;
 }
 /* рот «говорит», пока появляется реплика */
 function ksTalk(){
@@ -2854,6 +2859,27 @@ function hubCard(key, sub, pct){
   return `<button class="hub-card" data-view="${key}"><span class="hub-g">${s.glyph}</span><span class="hub-t"><b>${s.title}</b><small>${sub}</small>
     <span class="hub-bar"><i style="width:${Math.round(pct * 100)}%"></i></span></span><span class="hub-arrow" aria-hidden="true">›</span></button>`;
 }
+/* Главная: понятный первый шаг — «Начать с нуля» или «Продолжить» с того ряда, где остановились */
+const START_ORDER = ["hira", "hiraD", "hiraY", "kata", "kataD", "kataY", "kanjiN5", "kanjiN4"];
+function nextStep(){
+  for (const m of START_ORDER){
+    if (!KANA[m] || P.skip[m]) continue;
+    const i = KANA[m].rows.findIndex(r => !(P[m] && P[m][r.id]));
+    if (i >= 0) return {m, i};
+  }
+  return null;
+}
+function startHtml(){
+  const fresh = !P.skip.hira && !Object.values(P.hira || {}).some(Boolean);
+  if (fresh) return `<div class="start-card">
+      <div class="eyebrow">С чего начать</div>
+      <button class="btn accent" data-cont="hira:0">Начать с нуля — первый ряд хираганы</button>
+      <button class="btn ghost" data-view="hira">Я уже знаю азбуку — пройти тест</button>
+    </div>`;
+  const n = nextStep(); if (!n) return "";
+  const row = KANA[n.m].rows[n.i];
+  return `<div class="start-card"><button class="btn accent" data-cont="${n.m}:${n.i}">Продолжить: ${esc(KANA[n.m].name)} · ${esc(row.title || "ряд " + row.label)}</button></div>`;
+}
 function hubHtml(){
   const h = kanaProgress(SECTIONS.hira.mods), k = kanaProgress(SECTIONS.kata.mods);
   const gl = GLEVELS.flatMap(l => GT[l] || []), gd = gl.filter(t => P.grammar[t.id]).length, glv = GLEVELS.filter(l => (GT[l] || []).length).join(", ");
@@ -2864,6 +2890,7 @@ function hubHtml(){
       <p>Японский по 5 минут в день — с повторением, которое не даёт забыть.</p>
       ${lz("hi", "hero-lz")}
     </div>
+    ${startHtml()}
     ${todayHtml()}
     <div class="folders">
       ${folderTile("abc", `${h.done + k.done} / ${h.total + k.total} рядов`, (h.done + k.done) / (h.total + k.total))}
@@ -3009,6 +3036,7 @@ function courseMap(){
   const back = $("#secBack"); if (back) back.onclick = () => openView("home");
   $$("[data-jump]").forEach(b => b.onclick = () => { const el = document.getElementById(b.dataset.jump); if (el) el.scrollIntoView({behavior:"smooth", block:"start"}); });
   $$(".row").forEach(b => b.onclick = () => rowMenu(b.dataset.s, +b.dataset.i));
+  $$("[data-cont]").forEach(b => b.onclick = () => { const [m, i] = b.dataset.cont.split(":"); rowMenu(m, +i); });
   $$("[data-skip]").forEach(b => b.onclick = () => skipTest([b.dataset.skip]));
   $$("[data-big]").forEach(b => b.onclick = () => bigTest(b.dataset.big));
   const cfg = $("#bigCfg"); if (cfg) cfg.onclick = () => settingsScreen(() => { courseMap(); setTimeout(() => $("#bigCfg") && $("#bigCfg").scrollIntoView({block:"center"}), 50); });
